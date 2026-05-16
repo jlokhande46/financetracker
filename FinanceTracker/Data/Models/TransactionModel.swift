@@ -101,7 +101,7 @@ final class TransactionModel {
     func toEntity() -> TransactionEntity {
         TransactionEntity(
             id: id,
-            amount: Decimal(amount),
+            amount: Decimal(string: String(amount)) ?? Decimal(amount),
             type: type,
             merchantRaw: merchantRaw,
             merchantName: merchantName,
@@ -129,7 +129,7 @@ final class TransactionModel {
     static func from(entity: TransactionEntity) -> TransactionModel {
         TransactionModel(
             id: entity.id,
-            amount: Double(truncating: entity.amount as NSDecimalNumber),
+            amount: NSDecimalNumber(decimal: entity.amount).doubleValue,
             typeRaw: entity.type.rawValue,
             merchantRaw: entity.merchantRaw,
             merchantName: entity.merchantName,

@@ -35,10 +35,6 @@ struct ContentView: View {
     @State private var analyticsVM: AnalyticsViewModel?
     @State private var budgetsVM: BudgetsViewModel?
 
-    // MARK: - Badge Counts
-    @State private var unreadInsightCount: Int = 0
-    @State private var pendingReviewCount: Int = 0
-
     private var deepLink: DeepLinkHandler { DeepLinkHandler.shared }
 
     // MARK: - Body
@@ -59,27 +55,22 @@ struct ContentView: View {
             }
         }
         .task {
-            guard let c = container else { return }
+            guard let c = container, dashboardVM == nil else { return }
 
-            if dashboardVM == nil {
-                let vm = DashboardViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo, accountRepo: c.accountRepo, cardStatementRepo: c.cardStatementRepo, goalRepo: c.goalRepo)
-                dashboardVM = vm
-                await vm.load()
-                unreadInsightCount = vm.insights.filter { !$0.isRead }.count
-                pendingReviewCount = vm.pendingReviewCount
-            }
+            // Create all VMs before any load so every tab shows its loading state immediately.
+            let dvm = DashboardViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo,
+                                         accountRepo: c.accountRepo, cardStatementRepo: c.cardStatementRepo,
+                                         goalRepo: c.goalRepo)
+            let avm = AnalyticsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
+            let bvm = BudgetsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
 
-            if analyticsVM == nil {
-                let vm = AnalyticsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
-                analyticsVM = vm
-                await vm.load()
-            }
+            dashboardVM = dvm
+            analyticsVM = avm
+            budgetsVM = bvm
 
-            if budgetsVM == nil {
-                let vm = BudgetsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
-                budgetsVM = vm
-                await vm.load()
-            }
+            await dvm.load()
+            await avm.load()
+            await bvm.load()
         }
     }
 
@@ -100,7 +91,7 @@ struct ContentView: View {
             .tabItem {
                 Label(Tab.home.title, systemImage: Tab.home.icon)
             }
-            .badge(unreadInsightCount > 0 ? "•" : nil)
+            .badge(dashboardVM?.unreadInsightCount ?? 0)
             .tag(Tab.home)
 
             // Transactions
@@ -108,7 +99,7 @@ struct ContentView: View {
             .tabItem {
                 Label(Tab.transactions.title, systemImage: Tab.transactions.icon)
             }
-            .badge(pendingReviewCount > 0 ? "•" : nil)
+            .badge(dashboardVM?.pendingReviewCount ?? 0)
             .tag(Tab.transactions)
 
             // Analytics

@@ -61,7 +61,11 @@ struct CategoryEntity: Identifiable, Equatable {
         CategoryEntity(id: UUID(), name: "CC Payment",       slug: "cc_payment",    icon: "creditcard.and.123",          colorHex: "#A78BFA", isIncome: false, isTransfer: true,  parentSlug: nil, isSystem: true, sortOrder: 26),
     ]
 
+    private static let bySlug: [String: CategoryEntity] = Dictionary(
+        uniqueKeysWithValues: system.map { ($0.slug, $0) }
+    )
+
     static func find(slug: String) -> CategoryEntity {
-        system.first { $0.slug == slug } ?? system.last!
+        bySlug[slug] ?? bySlug["others"] ?? system.last!
     }
 }

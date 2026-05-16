@@ -67,6 +67,10 @@ final class DashboardViewModel {
         pendingReviewCount = pendingReviewTransactions.count
     }
 
+    // MARK: - Computed
+
+    var unreadInsightCount: Int { insights.filter { !$0.isRead }.count }
+
     // MARK: - Public Methods
 
     func load() async {
@@ -76,15 +80,16 @@ final class DashboardViewModel {
         accounts = accountRepo?.fetchAll() ?? []
         upcomingStatements = cardStatementRepo?.fetchUnpaid() ?? []
 
-        let all = transactionRepo.fetchAll()
         let monthTxns = transactionRepo.fetchForMonth(selectedMonth)
+        let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
+        let prevMonthTxns = transactionRepo.fetchForMonth(prevMonth)
         let pending = transactionRepo.fetchPendingReview()
 
         transactions = monthTxns
         pendingReviewTransactions = pending
         pendingReviewCount = pending.count
 
-        let computed = computeAnalysis(monthTxns, allTransactions: all)
+        let computed = computeAnalysis(monthTxns, prevMonthTransactions: prevMonthTxns)
         analysis = computed
         insights = generateInsights(from: computed)
 
@@ -94,7 +99,7 @@ final class DashboardViewModel {
         let monthlyIncome = monthTxns.filter(\.isCredit).reduce(Decimal(0)) { $0 + $1.amount }
         let cal = Calendar.current
         let sixMonthsAgo = cal.date(byAdding: .month, value: -6, to: selectedMonth) ?? Date.distantPast
-        let history = all.filter { $0.date >= sixMonthsAgo && $0.date < selectedMonth }
+        let history = transactionRepo.fetchAll(from: sixMonthsAgo, to: selectedMonth)
         smartInsights = SmartInsightsEngine.generate(
             transactions: monthTxns,
             historicalTransactions: history,
@@ -114,28 +119,15 @@ final class DashboardViewModel {
 
     // MARK: - Analysis Computation
 
-    func computeAnalysis(_ txns: [TransactionEntity], allTransactions: [TransactionEntity] = []) -> MonthlyAnalysis {
+    // txns is already month-scoped; prevMonthTransactions is pre-fetched from the prior month.
+    func computeAnalysis(_ txns: [TransactionEntity], prevMonthTransactions: [TransactionEntity] = []) -> MonthlyAnalysis {
         let cal = Calendar.current
-        let components = cal.dateComponents([.year, .month], from: selectedMonth)
-        let monthTxns = txns.filter {
-            let c = cal.dateComponents([.year, .month], from: $0.date)
-            return c.year == components.year && c.month == components.month
-        }
 
-        // Previous month
-        let prevMonth = cal.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth
-        let prevComponents = cal.dateComponents([.year, .month], from: prevMonth)
-        let prevTxns = allTransactions.filter {
-            let c = cal.dateComponents([.year, .month], from: $0.date)
-            return c.year == prevComponents.year && c.month == prevComponents.month
-        }
-
-        // Income & Expenses
-        let income: Decimal = monthTxns
+        let income: Decimal = txns
             .filter { $0.isCredit && !isTransferCategory($0.categorySlug) }
             .reduce(0) { $0 + $1.amount }
 
-        let expenses: Decimal = monthTxns
+        let expenses: Decimal = txns
             .filter { $0.isDebit && !isTransferCategory($0.categorySlug) }
             .reduce(0) { $0 + $1.amount }
 
@@ -146,7 +138,7 @@ final class DashboardViewModel {
 
         // Category Breakdown (top 6)
         var categoryMap: [String: (Decimal, Int)] = [:]
-        for txn in monthTxns where txn.isDebit && !isTransferCategory(txn.categorySlug) {
+        for txn in txns where txn.isDebit && !isTransferCategory(txn.categorySlug) {
             let existing = categoryMap[txn.categorySlug] ?? (0, 0)
             categoryMap[txn.categorySlug] = (existing.0 + txn.amount, existing.1 + 1)
         }
@@ -164,7 +156,7 @@ final class DashboardViewModel {
 
         // Top Merchants (top 5)
         var merchantMap: [String: (Decimal, Int, String)] = [:]
-        for txn in monthTxns where txn.isDebit {
+        for txn in txns where txn.isDebit {
             let key = txn.merchantName.isEmpty ? txn.merchantRaw : txn.merchantName
             let existing = merchantMap[key] ?? (0, 0, txn.categorySlug)
             merchantMap[key] = (existing.0 + txn.amount, existing.1 + 1, txn.categorySlug)
@@ -177,7 +169,7 @@ final class DashboardViewModel {
             }
 
         // Subscriptions
-        let subscriptions = monthTxns
+        let subscriptions = txns
             .filter { $0.isRecurring && isSubscriptionCategory($0.categorySlug) }
             .reduce(into: [String: SubscriptionItem]()) { dict, txn in
                 let key = txn.merchantName.isEmpty ? txn.merchantRaw : txn.merchantName
@@ -193,25 +185,23 @@ final class DashboardViewModel {
             .values
             .sorted { $0.amount > $1.amount }
 
-        // Day-wise spend
+        // Day-wise spend (cached formatter — no allocation per call)
         var dayMap: [String: Decimal] = [:]
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        for txn in monthTxns where txn.isDebit {
-            let key = formatter.string(from: txn.date)
+        for txn in txns where txn.isDebit {
+            let key = Self.dayFormatter.string(from: txn.date)
             dayMap[key] = (dayMap[key] ?? 0) + txn.amount
         }
         let range = monthDateRange(for: selectedMonth)
         var dayWise: [DaySpend] = []
         var cursor = range.start
         while cursor <= range.end {
-            let key = formatter.string(from: cursor)
+            let key = Self.dayFormatter.string(from: cursor)
             dayWise.append(DaySpend(date: cursor, amount: dayMap[key] ?? 0))
             cursor = cal.date(byAdding: .day, value: 1, to: cursor) ?? cursor
         }
 
-        // Previous month expenses
-        let prevExpenses: Decimal = prevTxns
+        // Previous month expenses — use pre-fetched data, no re-filtering by date needed
+        let prevExpenses: Decimal = prevMonthTransactions
             .filter { $0.isDebit && !isTransferCategory($0.categorySlug) }
             .reduce(0) { $0 + $1.amount }
 
@@ -234,34 +224,45 @@ final class DashboardViewModel {
         )
     }
 
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     // MARK: - Insight Generation
 
     func generateInsights(from analysis: MonthlyAnalysis) -> [InsightEntity] {
         var result: [InsightEntity] = []
         let cal = Calendar.current
+        let mk = "\(Int(selectedMonth.timeIntervalSince1970))"
+
+        // Preserve isRead state for insights that already exist in the current list.
+        let previouslyRead = Set(insights.filter(\.isRead).map(\.id))
+        func makeInsight(key: String, type: InsightType, title: String, body: String,
+                         amount: Decimal? = nil, categorySlug: String? = nil) -> InsightEntity {
+            let id = stableInsightID("\(key)-\(mk)")
+            return InsightEntity(id: id, type: type, title: title, body: body,
+                                 amount: amount, categorySlug: categorySlug,
+                                 date: Date(), isRead: previouslyRead.contains(id))
+        }
 
         // 1. Savings insight
         if analysis.savings > 0 {
-            result.append(InsightEntity(
-                id: UUID(),
+            result.append(makeInsight(
+                key: "savings-pos",
                 type: .positive,
                 title: "Great savings this month!",
                 body: String(format: "You saved %.0f%% of your income — ₹%@ kept safe.", analysis.savingsRate, analysis.savings.compactString),
-                amount: analysis.savings,
-                categorySlug: nil,
-                date: Date(),
-                isRead: false
+                amount: analysis.savings
             ))
         } else if analysis.savings < 0 {
-            result.append(InsightEntity(
-                id: UUID(),
+            result.append(makeInsight(
+                key: "savings-neg",
                 type: .warning,
                 title: "Spending exceeds income",
                 body: "You spent ₹\((-analysis.savings).compactString) more than you earned this month.",
-                amount: -analysis.savings,
-                categorySlug: nil,
-                date: Date(),
-                isRead: false
+                amount: -analysis.savings
             ))
         }
 
@@ -270,26 +271,22 @@ final class DashboardViewModel {
             let cat = CategoryEntity.find(slug: topCat.categorySlug)
             let changeAbs = analysis.spendChangePercent
             if changeAbs > 20 {
-                result.append(InsightEntity(
-                    id: UUID(),
+                result.append(makeInsight(
+                    key: "top-cat-warn",
                     type: .warning,
                     title: "\(cat.name) spend up \(Int(abs(changeAbs)))%",
                     body: "Your top category this month is \(cat.name) at ₹\(topCat.amount.compactString). That's significantly higher than last month.",
                     amount: topCat.amount,
-                    categorySlug: topCat.categorySlug,
-                    date: Date(),
-                    isRead: false
+                    categorySlug: topCat.categorySlug
                 ))
             } else {
-                result.append(InsightEntity(
-                    id: UUID(),
+                result.append(makeInsight(
+                    key: "top-cat-neutral",
                     type: .neutral,
                     title: "Top spend: \(cat.name)",
                     body: "\(cat.name) accounts for \(Int(topCat.percent))% of your expenses at ₹\(topCat.amount.compactString) this month.",
                     amount: topCat.amount,
-                    categorySlug: topCat.categorySlug,
-                    date: Date(),
-                    isRead: false
+                    categorySlug: topCat.categorySlug
                 ))
             }
         }
@@ -297,43 +294,35 @@ final class DashboardViewModel {
         // 3. Subscription cost tip
         if !analysis.subscriptions.isEmpty {
             let total = analysis.subscriptions.reduce(Decimal(0)) { $0 + $1.amount }
-            result.append(InsightEntity(
-                id: UUID(),
+            result.append(makeInsight(
+                key: "subscriptions",
                 type: .tip,
                 title: "Subscriptions cost ₹\(total.compactString)/mo",
                 body: "You have \(analysis.subscriptions.count) active subscription\(analysis.subscriptions.count == 1 ? "" : "s"). Review if all are still needed.",
                 amount: total,
-                categorySlug: "subscriptions",
-                date: Date(),
-                isRead: false
+                categorySlug: "subscriptions"
             ))
         }
 
         // 4. Pending review
         if pendingReviewCount > 0 {
-            result.append(InsightEntity(
-                id: UUID(),
+            result.append(makeInsight(
+                key: "pending-review",
                 type: .neutral,
                 title: "\(pendingReviewCount) transaction\(pendingReviewCount == 1 ? "" : "s") need review",
-                body: "Some transactions were auto-categorized with low confidence. Tap to confirm or correct them.",
-                amount: nil,
-                categorySlug: nil,
-                date: Date(),
-                isRead: false
+                body: "Some transactions were auto-categorized with low confidence. Tap to confirm or correct them."
             ))
         }
 
         // 5. Largest merchant
         if let topMerchant = analysis.topMerchants.first {
-            result.append(InsightEntity(
-                id: UUID(),
+            result.append(makeInsight(
+                key: "top-merchant",
                 type: .neutral,
                 title: "Largest spend: \(topMerchant.merchantName)",
                 body: "You made \(topMerchant.count) payment\(topMerchant.count == 1 ? "" : "s") totaling ₹\(topMerchant.amount.compactString) at \(topMerchant.merchantName).",
                 amount: topMerchant.amount,
-                categorySlug: topMerchant.categorySlug,
-                date: Date(),
-                isRead: false
+                categorySlug: topMerchant.categorySlug
             ))
         }
 
@@ -342,16 +331,12 @@ final class DashboardViewModel {
             let change = analysis.spendChangePercent
             if abs(change) > 5 {
                 let direction = change > 0 ? "up" : "down"
-                let insightType: InsightType = change > 0 ? .warning : .positive
-                result.append(InsightEntity(
-                    id: UUID(),
-                    type: insightType,
+                result.append(makeInsight(
+                    key: "mom-change",
+                    type: change > 0 ? .warning : .positive,
                     title: "Spending \(direction) \(Int(abs(change)))% vs last month",
                     body: "Last month: ₹\(analysis.previousMonthExpenses.compactString) | This month: ₹\(analysis.totalExpenses.compactString)",
-                    amount: analysis.totalExpenses,
-                    categorySlug: nil,
-                    date: Date(),
-                    isRead: false
+                    amount: analysis.totalExpenses
                 ))
             }
         }
@@ -360,19 +345,36 @@ final class DashboardViewModel {
         let daysInMonth = cal.range(of: .day, in: .month, for: selectedMonth)?.count ?? 30
         if analysis.totalExpenses > 0 {
             let avg = analysis.totalExpenses / Decimal(daysInMonth)
-            result.append(InsightEntity(
-                id: UUID(),
+            result.append(makeInsight(
+                key: "daily-avg",
                 type: .tip,
                 title: "Daily average: ₹\(avg.compactString)",
                 body: "You're spending about ₹\(avg.compactString) per day this month across \(transactions.count) transactions.",
-                amount: avg,
-                categorySlug: nil,
-                date: Date(),
-                isRead: false
+                amount: avg
             ))
         }
 
         return Array(result.prefix(7))
+    }
+
+    /// Produces a deterministic UUID from a string key using FNV-1a so insight IDs
+    /// survive reloads and isRead state can be preserved across refreshes.
+    private func stableInsightID(_ key: String) -> UUID {
+        var h1: UInt64 = 14695981039346656037
+        var h2: UInt64 = 0xcbf29ce484222325
+        for byte in key.utf8 {
+            h1 = (h1 ^ UInt64(byte)) &* 1099511628211
+        }
+        for byte in key.utf8.reversed() {
+            h2 = (h2 ^ UInt64(byte)) &* 0x100000001b3
+        }
+        let uuidString = String(format: "%08X-%04X-%04X-%04X-%012X",
+            UInt32(h1 >> 32),
+            UInt16((h1 >> 16) & 0xFFFF),
+            UInt16(0x4000 | (h1 & 0x0FFF)),
+            UInt16(0x8000 | (h2 >> 48 & 0x3FFF)),
+            h2 & 0x0000FFFFFFFFFFFF)
+        return UUID(uuidString: uuidString) ?? UUID()
     }
 
     // MARK: - Helpers

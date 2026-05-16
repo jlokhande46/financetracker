@@ -13,22 +13,29 @@ class TransactionRepositoryImpl {
         var descriptor = FetchDescriptor<TransactionModel>(
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
-        var predicates: [Predicate<TransactionModel>] = [
-            #Predicate { !$0.isDeleted && !$0.isHidden }
-        ]
-        if let start = startDate {
-            predicates.append(#Predicate { $0.date >= start })
-        }
-        if let end = endDate {
-            predicates.append(#Predicate { $0.date <= end })
-        }
-        descriptor.predicate = predicates.count == 1 ? predicates[0] : #Predicate {
-            !$0.isDeleted && !$0.isHidden
+        // #Predicate doesn't support dynamic composition, so branch explicitly.
+        if let start = startDate, let end = endDate {
+            descriptor.predicate = #Predicate<TransactionModel> { m in
+                !m.isDeleted && !m.isHidden && m.date >= start && m.date <= end
+            }
+        } else if let start = startDate {
+            descriptor.predicate = #Predicate<TransactionModel> { m in
+                !m.isDeleted && !m.isHidden && m.date >= start
+            }
+        } else if let end = endDate {
+            descriptor.predicate = #Predicate<TransactionModel> { m in
+                !m.isDeleted && !m.isHidden && m.date <= end
+            }
+        } else {
+            descriptor.predicate = #Predicate<TransactionModel> { m in
+                !m.isDeleted && !m.isHidden
+            }
         }
         do {
             let models = try modelContext.fetch(descriptor)
             return models.map { $0.toEntity() }
         } catch {
+            assertionFailure("Failed to fetch transactions: \(error)")
             return []
         }
     }
@@ -53,7 +60,7 @@ class TransactionRepositoryImpl {
     func save(_ entity: TransactionEntity) {
         let model = TransactionModel.from(entity: entity)
         modelContext.insert(model)
-        try? modelContext.save()
+        persistChanges()
     }
 
     func update(_ entity: TransactionEntity) {
@@ -61,49 +68,65 @@ class TransactionRepositoryImpl {
         let descriptor = FetchDescriptor<TransactionModel>(
             predicate: #Predicate { $0.id == id }
         )
-        guard let model = try? modelContext.fetch(descriptor).first else { return }
+        guard let model = (try? modelContext.fetch(descriptor))?.first else { return }
+        model.amount = NSDecimalNumber(decimal: entity.amount).doubleValue
+        model.typeRaw = entity.type.rawValue
+        model.merchantRaw = entity.merchantRaw
         model.merchantName = entity.merchantName
         model.categorySlug = entity.categorySlug
+        model.subcategorySlug = entity.subcategorySlug
+        model.date = entity.date
+        model.sourceRaw = entity.source.rawValue
+        model.confidence = entity.confidence
         model.isConfirmed = entity.isConfirmed
-        model.notes = entity.notes
-        model.tags = entity.tags
         model.isRecurring = entity.isRecurring
+        model.isSplit = entity.isSplit
+        model.parentId = entity.parentId
+        model.tags = entity.tags
+        model.notes = entity.notes
+        model.receiptURL = entity.receiptURL
+        model.upiRef = entity.upiRef
+        model.bankRef = entity.bankRef
         model.updatedAt = Date()
-        try? modelContext.save()
+        persistChanges()
     }
 
     func delete(id: UUID) {
         let descriptor = FetchDescriptor<TransactionModel>(
             predicate: #Predicate { $0.id == id }
         )
-        guard let model = try? modelContext.fetch(descriptor).first else { return }
+        guard let model = (try? modelContext.fetch(descriptor))?.first else { return }
         model.isDeleted = true
-        try? modelContext.save()
+        persistChanges()
     }
 
     func saveBulk(_ entities: [TransactionEntity]) {
         for entity in entities {
             modelContext.insert(TransactionModel.from(entity: entity))
         }
-        try? modelContext.save()
+        persistChanges()
     }
 
     func deleteAll() {
         guard let models = try? modelContext.fetch(FetchDescriptor<TransactionModel>()) else { return }
-        for model in models {
-            modelContext.delete(model)
-        }
-        try? modelContext.save()
+        for model in models { modelContext.delete(model) }
+        persistChanges()
     }
 
     func seedSampleData() {
         let count = (try? modelContext.fetch(FetchDescriptor<TransactionModel>()).count) ?? 0
         guard count == 0 else { return }
-
-        let samples = SampleData.transactions
-        for entity in samples {
+        for entity in SampleData.transactions {
             modelContext.insert(TransactionModel.from(entity: entity))
         }
-        try? modelContext.save()
+        persistChanges()
+    }
+
+    private func persistChanges() {
+        do {
+            try modelContext.save()
+        } catch {
+            assertionFailure("SwiftData save failed: \(error)")
+        }
     }
 }

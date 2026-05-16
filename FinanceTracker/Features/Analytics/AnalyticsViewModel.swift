@@ -44,12 +44,16 @@ final class AnalyticsViewModel {
         isLoading = true
         defer { isLoading = false }
 
-        let all = transactionRepo.fetchAll()
+        let cal = Calendar.current
+        // Only fetch the 7 months we actually need (current + 6 history) instead of all-time.
+        let windowStart = cal.date(byAdding: .month, value: -6, to: selectedMonth) ?? selectedMonth
+        let rollingWindow = transactionRepo.fetchAll(from: windowStart)
+
         let monthTxns = transactionRepo.fetchForMonth(selectedMonth)
         transactions = monthTxns
 
-        analysis = computeAnalysisForMonth(selectedMonth, txns: monthTxns, allTxns: all)
-        last6MonthsData = computeLast6Months(all)
+        analysis = computeAnalysisForMonth(selectedMonth, txns: monthTxns, allTxns: rollingWindow)
+        last6MonthsData = computeLast6Months(rollingWindow)
     }
 
     func selectMonth(_ date: Date) {
@@ -137,12 +141,10 @@ final class AnalyticsViewModel {
             .values
             .sorted { $0.amount > $1.amount }
 
-        // Day-wise spend
+        // Day-wise spend (cached formatter — no allocation per call)
         var dayMap: [String: Decimal] = [:]
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
         for txn in txns where txn.isDebit {
-            let key = fmt.string(from: txn.date)
+            let key = Self.dayFormatter.string(from: txn.date)
             dayMap[key] = (dayMap[key] ?? 0) + txn.amount
         }
 
@@ -151,7 +153,7 @@ final class AnalyticsViewModel {
         var dayWise: [DaySpend] = []
         for day in 0..<daysInMonth {
             if let date = cal.date(byAdding: .day, value: day, to: startOfMonth) {
-                let key = fmt.string(from: date)
+                let key = Self.dayFormatter.string(from: date)
                 dayWise.append(DaySpend(date: date, amount: dayMap[key] ?? 0))
             }
         }
@@ -189,6 +191,12 @@ final class AnalyticsViewModel {
     private func isSubscriptionCategory(_ slug: String) -> Bool {
         ["subscriptions", "entertainment", "streaming", "software"].contains(slug)
     }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 }
 
 // MARK: - Calendar helper
