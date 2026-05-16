@@ -23,6 +23,19 @@ final class SMSParser {
         return f
     }()
 
+    // Compiled regexes are expensive; cache them for the lifetime of the singleton.
+    private static var regexCache: [String: NSRegularExpression] = [:]
+    private static let regexCacheLock = NSLock()
+
+    private func compiledRegex(_ pattern: String) -> NSRegularExpression? {
+        Self.regexCacheLock.lock()
+        defer { Self.regexCacheLock.unlock() }
+        if let cached = Self.regexCache[pattern] { return cached }
+        let regex = try? NSRegularExpression(pattern: pattern)
+        Self.regexCache[pattern] = regex
+        return regex
+    }
+
     func parse(_ message: String) -> ParsedSMSResult? {
         let msg = message.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -270,7 +283,7 @@ final class SMSParser {
     // MARK: - Helpers
 
     private func match(_ pattern: String, in text: String) -> [String]? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = compiledRegex(pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
         guard let m = regex.firstMatch(in: text, range: range) else { return nil }
         var groups: [String] = []

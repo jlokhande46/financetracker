@@ -140,13 +140,16 @@ final class TransactionListViewModel {
         return groups
     }
 
+    private let groupHeaderFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, d MMM"
+        return f
+    }()
+
     private func relativeDay(for date: Date, calendar: Calendar) -> String {
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, d MMM"
-        return formatter.string(from: date)
+        return groupHeaderFormatter.string(from: date)
     }
 
     // MARK: - Actions
