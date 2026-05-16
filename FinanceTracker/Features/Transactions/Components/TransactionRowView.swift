@@ -4,9 +4,23 @@ struct TransactionRowView: View {
     let transaction: TransactionEntity
     var accountChip: String? = nil
     var onTap: (() -> Void)? = nil
+    /// Called when the user taps the intent chip or picks an option from the
+    /// context menu. Pass `nil` to clear any override.
+    var onSetIntent: ((CategoryIntent?) -> Void)? = nil
 
     private var category: CategoryEntity {
         CategoryEntity.find(slug: transaction.categorySlug)
+    }
+
+    /// Cycle order when tapping the intent chip:
+    /// (no override) → need → want → saving → (no override)
+    private func nextIntent(from current: CategoryIntent?) -> CategoryIntent? {
+        switch current {
+        case .none:   return .need
+        case .need:   return .want
+        case .want:   return .saving
+        case .saving: return nil
+        }
     }
 
     private var amountColor: Color {
@@ -65,13 +79,28 @@ struct TransactionRowView: View {
                                 .foregroundStyle(Color.brandPrimary)
                         }
 
-                        if let override = transaction.intentOverride {
-                            Image(systemName: override.icon)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(override.color)
-                                .padding(3)
-                                .background(override.color.opacity(0.15))
+                        if !transaction.isCredit, let intent = transaction.effectiveIntent {
+                            // Always show the row's current need/want/saving label.
+                            // Tap cycles through; long-press opens the context menu.
+                            Button {
+                                onSetIntent?(nextIntent(from: transaction.intentOverride))
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: intent.icon)
+                                        .font(.system(size: 9, weight: .semibold))
+                                    Text(intent.displayName)
+                                        .font(.micro)
+                                }
+                                .foregroundStyle(intent.color)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(intent.color.opacity(transaction.intentOverride == nil ? 0.10 : 0.20))
+                                .overlay(
+                                    Capsule().stroke(intent.color.opacity(transaction.intentOverride == nil ? 0 : 0.4), lineWidth: 0.5)
+                                )
                                 .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         if transaction.needsReview {
@@ -130,6 +159,35 @@ struct TransactionRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Long-press menu — works inside LazyVStack (unlike .swipeActions which is
+        // List-only). Gives the user a reliable way to set the intent for any row.
+        .contextMenu {
+            if !transaction.isCredit {
+                Button {
+                    onSetIntent?(.need)
+                } label: {
+                    Label("Mark as Need", systemImage: CategoryIntent.need.icon)
+                }
+                Button {
+                    onSetIntent?(.want)
+                } label: {
+                    Label("Mark as Want", systemImage: CategoryIntent.want.icon)
+                }
+                Button {
+                    onSetIntent?(.saving)
+                } label: {
+                    Label("Mark as Saving", systemImage: CategoryIntent.saving.icon)
+                }
+                if transaction.intentOverride != nil {
+                    Divider()
+                    Button {
+                        onSetIntent?(nil)
+                    } label: {
+                        Label("Clear override (use category default)", systemImage: "arrow.uturn.backward")
+                    }
+                }
+            }
+        }
     }
 }
 

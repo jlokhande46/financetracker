@@ -361,10 +361,12 @@ struct TransactionFeedView: View {
                 VStack(spacing: 0) {
                     TransactionRowView(
                         transaction: txn,
-                        accountChip: viewModel.accountDisplay(for: txn)
-                    ) {
-                        selectedTransaction = txn
-                    }
+                        accountChip: viewModel.accountDisplay(for: txn),
+                        onTap: { selectedTransaction = txn },
+                        onSetIntent: { newIntent in
+                            withAnimation { viewModel.setIntentOverride(transaction: txn, intent: newIntent) }
+                        }
+                    )
                     .padding(.horizontal, Spacing.base)
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
