@@ -1,0 +1,38 @@
+# Sensitive — real bank statements with personal financial data. Never commit.
+FinanceTracker/unlocked/
+*.pdf
+
+# macOS
+.DS_Store
+
+# Xcode user-specific state
+xcuserdata/
+*.xcuserstate
+*.xcuserstatebreakpointsv2
+*.xcuserdatad/
+
+# Build products
+build/
+DerivedData/
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# CocoaPods (in case it gets added later)
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Logs
+*.log
