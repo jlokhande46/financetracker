@@ -26,6 +26,10 @@ final class TransactionModel {
     var rawContent: String?
     var isHidden: Bool
     var isDeleted: Bool
+    /// Optional per-transaction intent override ("need" | "want" | "saving").
+    /// When nil, the category's default intent applies. SwiftData auto-migrates
+    /// existing records to nil for this new field.
+    var intentOverrideRaw: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -63,6 +67,7 @@ final class TransactionModel {
         rawContent: String? = nil,
         isHidden: Bool = false,
         isDeleted: Bool = false,
+        intentOverrideRaw: String? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -88,6 +93,7 @@ final class TransactionModel {
         self.rawContent = rawContent
         self.isHidden = isHidden
         self.isDeleted = isDeleted
+        self.intentOverrideRaw = intentOverrideRaw
         self.createdAt = createdAt
         self.updatedAt = createdAt
     }
@@ -115,6 +121,7 @@ final class TransactionModel {
             upiRef: upiRef,
             bankRef: bankRef,
             rawContent: rawContent,
+            intentOverride: intentOverrideRaw.flatMap { CategoryIntent(rawValue: $0) },
             createdAt: createdAt
         )
     }
@@ -142,6 +149,7 @@ final class TransactionModel {
             upiRef: entity.upiRef,
             bankRef: entity.bankRef,
             rawContent: entity.rawContent,
+            intentOverrideRaw: entity.intentOverride?.rawValue,
             createdAt: entity.createdAt
         )
     }

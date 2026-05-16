@@ -65,6 +65,15 @@ struct TransactionRowView: View {
                                 .foregroundStyle(Color.brandPrimary)
                         }
 
+                        if let override = transaction.intentOverride {
+                            Image(systemName: override.icon)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(override.color)
+                                .padding(3)
+                                .background(override.color.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+
                         if transaction.needsReview {
                             Text("Review")
                                 .font(.micro)

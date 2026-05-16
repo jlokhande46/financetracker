@@ -130,7 +130,7 @@ struct CreateBudgetSheet: View {
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(
-                        amountString.isEmpty ? Color.white.opacity(0.1) : Color.brandPrimary.opacity(0.4),
+                        amountString.isEmpty ? Color.divider : Color.brandPrimary.opacity(0.4),
                         lineWidth: 1
                     )
             )

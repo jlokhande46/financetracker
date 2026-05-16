@@ -8,6 +8,13 @@ struct AccountDetailView: View {
 
     @State private var transactions: [TransactionEntity] = []
     @State private var statement: CardStatementEntity? = nil
+    @State private var currentAccount: AccountEntity
+    @State private var showEditCycle = false
+
+    init(account: AccountEntity) {
+        self.account = account
+        self._currentAccount = State(initialValue: account)
+    }
 
     private var formattedBalance: String {
         let formatter = NumberFormatter()
@@ -46,6 +53,9 @@ struct AccountDetailView: View {
                         if let s = statement {
                             statementCard(s)
                         }
+                        if account.type == .credit {
+                            cycleCard
+                        }
                         recentTransactions
                         Spacer(minLength: 60)
                     }
@@ -63,7 +73,67 @@ struct AccountDetailView: View {
                 }
             }
             .task { load() }
+            .sheet(isPresented: $showEditCycle) {
+                EditCycleSheet(account: currentAccount, onSaved: { load() })
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
         }
+    }
+
+    @ViewBuilder
+    private var cycleCard: some View {
+        Button {
+            showEditCycle = true
+        } label: {
+            HStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(Color.brandPrimary.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.brandPrimary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Billing Cycle")
+                        .font(.bodyMedium)
+                        .foregroundStyle(Color.textPrimary)
+                    if let sd = currentAccount.statementDay, let dd = currentAccount.dueDay {
+                        Text("Generates on \(ordinal(sd)) · Due on \(ordinal(dd))")
+                            .font(.caption)
+                            .foregroundStyle(Color.textSecondary)
+                    } else {
+                        Text("Tap to set statement & due dates for auto-reminders")
+                            .font(.caption)
+                            .foregroundStyle(Color.textTertiary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.textTertiary)
+            }
+            .padding(Spacing.base)
+            .background(Color.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func ordinal(_ day: Int) -> String {
+        let suffix: String
+        switch day % 100 {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch day % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(day)\(suffix)"
     }
 
     private var cardHero: some View {
@@ -247,6 +317,10 @@ struct AccountDetailView: View {
 
     private func load() {
         guard let container else { return }
+        // Refresh in case cycle was just edited.
+        if let updated = container.accountRepo.fetchAll().first(where: { $0.id == account.id }) {
+            currentAccount = updated
+        }
         transactions = container.transactionRepo.fetchAll()
             .filter { $0.accountId == account.id }
             .sorted { $0.date > $1.date }

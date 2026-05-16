@@ -575,6 +575,7 @@ struct SMSImportView: View {
             rawContent: trimmed
         )
         container.transactionRepo.save(entity)
+        container.billCycleManager.handleTransactionChange()
 
         let sign   = result.type == .credit ? "+" : "-"
         let amount = "₹\(result.amount.formatted(.number.precision(.fractionLength(0))))"
@@ -659,6 +660,8 @@ struct SMSImportView: View {
                     rawContent: smsText
                 )
                 container.transactionRepo.save(entity)
+                // If this was a CC payment, check whether it pays off an outstanding statement.
+                container.billCycleManager.handleTransactionChange()
                 isAdding = false
                 toastMessage = "Transaction added successfully"
                 toastType = .success

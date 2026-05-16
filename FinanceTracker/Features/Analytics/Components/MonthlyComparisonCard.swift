@@ -105,7 +105,7 @@ struct MonthlyComparisonCard: View {
                     comparisonRow(row)
 
                     Divider()
-                        .background(Color.white.opacity(0.05))
+                        .background(Color.chartGrid)
                 }
             }
 

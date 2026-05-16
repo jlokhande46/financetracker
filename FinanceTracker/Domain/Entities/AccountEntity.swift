@@ -10,6 +10,11 @@ struct AccountEntity: Identifiable, Equatable {
     var creditLimit: Decimal?
     var colorHex: String
     var isActive: Bool
+    /// Day of month the credit card statement is generated (1-31). Only meaningful
+    /// for credit-type accounts. Used by BillCycleManager to auto-create statements.
+    var statementDay: Int?
+    /// Day of month the bill is due. Cycle: statement → due (next occurrence of dueDay).
+    var dueDay: Int?
     var createdAt: Date
 
     var availableCredit: Decimal? {
@@ -32,6 +37,8 @@ struct AccountEntity: Identifiable, Equatable {
         creditLimit: Decimal? = nil,
         colorHex: String = "#7B6EF6",
         isActive: Bool = true,
+        statementDay: Int? = nil,
+        dueDay: Int? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -43,6 +50,8 @@ struct AccountEntity: Identifiable, Equatable {
         self.creditLimit = creditLimit
         self.colorHex = colorHex
         self.isActive = isActive
+        self.statementDay = statementDay
+        self.dueDay = dueDay
         self.createdAt = createdAt
     }
 }

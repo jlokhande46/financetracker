@@ -12,6 +12,10 @@ final class AccountModel {
     var creditLimit: Double?
     var colorHex: String
     var isActive: Bool
+    /// Day of month the credit-card statement is generated (auto-migrated to nil).
+    var statementDay: Int?
+    /// Day of month the bill is due (auto-migrated to nil).
+    var dueDay: Int?
     var createdAt: Date
 
     var type: AccountType {
@@ -29,6 +33,8 @@ final class AccountModel {
         creditLimit: Double? = nil,
         colorHex: String = "#7B6EF6",
         isActive: Bool = true,
+        statementDay: Int? = nil,
+        dueDay: Int? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -40,6 +46,8 @@ final class AccountModel {
         self.creditLimit = creditLimit
         self.colorHex = colorHex
         self.isActive = isActive
+        self.statementDay = statementDay
+        self.dueDay = dueDay
         self.createdAt = createdAt
     }
 
@@ -54,6 +62,8 @@ final class AccountModel {
             creditLimit: creditLimit.map { Decimal($0) },
             colorHex: colorHex,
             isActive: isActive,
+            statementDay: statementDay,
+            dueDay: dueDay,
             createdAt: createdAt
         )
     }

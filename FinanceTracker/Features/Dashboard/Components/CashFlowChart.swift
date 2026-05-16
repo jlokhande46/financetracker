@@ -110,7 +110,7 @@ struct CashFlowChart: View {
                         .foregroundStyle(Color.textSecondary)
                         .font(.micro)
                     AxisGridLine()
-                        .foregroundStyle(Color.white.opacity(0.05))
+                        .foregroundStyle(Color.chartGrid)
                 }
             }
             .chartYAxis {
@@ -122,35 +122,31 @@ struct CashFlowChart: View {
                                 .foregroundColor(.textSecondary)
                         }
                         AxisGridLine()
-                            .foregroundStyle(Color.white.opacity(0.05))
+                            .foregroundStyle(Color.chartGrid)
                     }
                 }
             }
-            .chartOverlay { proxy in
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Color.clear)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { value in
-                                    let x = value.location.x - geo.frame(in: .local).minX
-                                    if let date: Date = proxy.value(atX: x, as: Date.self) {
-                                        let cal = Calendar.current
-                                        selectedDay = dayWiseSpend.min(by: {
-                                            abs(cal.startOfDay(for: $0.date).timeIntervalSince(cal.startOfDay(for: date))) <
-                                            abs(cal.startOfDay(for: $1.date).timeIntervalSince(cal.startOfDay(for: date)))
-                                        })
-                                    }
-                                }
-                                .onEnded { _ in
-                                    withAnimation(.easeOut(duration: 0.3)) {
-                                        selectedDay = nil
-                                    }
-                                }
-                        )
+            // chartXSelection drives selection internally without per-pixel re-renders.
+            // Wrapped in a non-animating transaction so the parent's .animation(value:)
+            // doesn't fire on every move and cause the chart to flicker.
+            .chartXSelection(value: Binding(
+                get: { selectedDay?.date },
+                set: { newDate in
+                    var t = Transaction()
+                    t.disablesAnimations = true
+                    withTransaction(t) {
+                        if let d = newDate {
+                            let cal = Calendar.current
+                            selectedDay = dayWiseSpend.min(by: {
+                                abs(cal.startOfDay(for: $0.date).timeIntervalSince(cal.startOfDay(for: d))) <
+                                abs(cal.startOfDay(for: $1.date).timeIntervalSince(cal.startOfDay(for: d)))
+                            })
+                        } else {
+                            selectedDay = nil
+                        }
+                    }
                 }
-            }
+            ))
             .frame(height: 160)
             .animation(.easeOut(duration: 0.7), value: animateChart)
         }

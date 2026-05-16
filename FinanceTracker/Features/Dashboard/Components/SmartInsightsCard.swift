@@ -81,8 +81,12 @@ struct SmartInsightsCard: View {
 
 enum SmartInsightsEngine {
 
+    /// `transactions` is the CURRENT month's debits/credits.
+    /// `historicalTransactions` is the trailing 3-6 months used for anomaly detection
+    /// and recurring-transaction discovery.
     static func generate(
         transactions: [TransactionEntity],
+        historicalTransactions: [TransactionEntity] = [],
         goals: [GoalEntity],
         monthlyIncome: Decimal
     ) -> [SmartInsight] {
@@ -95,7 +99,7 @@ enum SmartInsightsEngine {
         if totalSpend > 0 {
             var byIntent: [CategoryIntent: Decimal] = [:]
             for t in expenses {
-                guard let intent = CategoryEntity.find(slug: t.categorySlug).intent else { continue }
+                guard let intent = t.effectiveIntent else { continue }
                 byIntent[intent, default: 0] += t.amount
             }
 
@@ -194,7 +198,119 @@ enum SmartInsightsEngine {
             ))
         }
 
+        // 5. Anomaly detection — z-score on category spend vs trailing history.
+        //    Per category, compare this month against mean/stddev of prior months.
+        //    Flag the category with the strongest "above-normal" deviation.
+        if !historicalTransactions.isEmpty {
+            let cal = Calendar.current
+            let monthsBack = Dictionary(grouping: historicalTransactions.filter { $0.isDebit }) { txn -> Date in
+                let comps = cal.dateComponents([.year, .month], from: txn.date)
+                return cal.date(from: comps) ?? txn.date
+            }
+            // Build {categorySlug: [monthlyTotal, ...]} for the historical months.
+            var monthlyByCategory: [String: [Decimal]] = [:]
+            for (_, txns) in monthsBack {
+                let perCat = Dictionary(grouping: txns, by: { $0.categorySlug })
+                    .mapValues { $0.reduce(Decimal(0)) { $0 + $1.amount } }
+                for (slug, total) in perCat {
+                    monthlyByCategory[slug, default: []].append(total)
+                }
+            }
+            let thisMonthByCategory = Dictionary(grouping: expenses, by: { $0.categorySlug })
+                .mapValues { $0.reduce(Decimal(0)) { $0 + $1.amount } }
+
+            var strongestAnomaly: (slug: String, current: Decimal, mean: Decimal, z: Double)?
+            for (slug, history) in monthlyByCategory where history.count >= 2 {
+                let current = thisMonthByCategory[slug] ?? 0
+                guard current > 0 else { continue }
+                let nums = history.map { Double(truncating: $0 as NSDecimalNumber) }
+                let mean = nums.reduce(0, +) / Double(nums.count)
+                let variance = nums.map { pow($0 - mean, 2) }.reduce(0, +) / Double(nums.count)
+                let stddev = sqrt(variance)
+                guard stddev > 1 else { continue } // skip near-constant categories
+                let z = (Double(truncating: current as NSDecimalNumber) - mean) / stddev
+                if z > 1.5, strongestAnomaly == nil || z > strongestAnomaly!.z {
+                    strongestAnomaly = (slug, current, Decimal(mean), z)
+                }
+            }
+            if let a = strongestAnomaly {
+                let cat = CategoryEntity.find(slug: a.slug)
+                out.append(SmartInsight(
+                    icon: "chart.line.uptrend.xyaxis",
+                    iconColor: cat.color,
+                    headline: "\(cat.name) spiked this month",
+                    detail: "Spending is \(formatINR(a.current)) vs average \(formatINR(a.mean)). About \(Int(a.z.rounded()))σ above normal.",
+                    actionLabel: nil
+                ))
+            }
+        }
+
+        // 6. Recurring transaction discovery — same merchant + similar amount
+        //    appearing in 2+ prior months but not categorised as subscription/EMI.
+        if !historicalTransactions.isEmpty {
+            let recurring = findUnflaggedRecurring(in: historicalTransactions + expenses)
+            if let top = recurring.first {
+                out.append(SmartInsight(
+                    icon: "arrow.triangle.2.circlepath",
+                    iconColor: Color(hex: "#8B5CF6"),
+                    headline: "\(top.merchant) looks recurring",
+                    detail: "Charged about \(formatINR(top.amount)) every month. Tag it as Subscription or EMI for cleaner totals.",
+                    actionLabel: nil
+                ))
+            }
+        }
+
+        // 7. Goal-acceleration suggestion — if a goal is short, name the wants
+        //    category that could be cut to cover the shortfall. Reuses
+        //    `monthlyDisposable` computed earlier in section 3.
+        for goal in goals.prefix(1) where !goal.isCompleted {
+            guard let needed = goal.monthlyRequired, needed > monthlyDisposable else { continue }
+            let shortfall = needed - monthlyDisposable
+            // Find the biggest "want" category to suggest as the funding source.
+            let wantsByCat = Dictionary(grouping: expenses.filter {
+                CategoryEntity.find(slug: $0.categorySlug).intent == .want
+            }, by: { $0.categorySlug })
+                .mapValues { $0.reduce(Decimal(0)) { $0 + $1.amount } }
+            if let top = wantsByCat.max(by: { $0.value < $1.value }), top.value >= shortfall {
+                let cat = CategoryEntity.find(slug: top.key)
+                let cutPct = Int((Double(truncating: (shortfall / top.value * 100) as NSDecimalNumber)).rounded())
+                out.append(SmartInsight(
+                    icon: "target",
+                    iconColor: goal.type.color,
+                    headline: "Cut \(cat.name) \(cutPct)% to hit \(goal.name)",
+                    detail: "Reducing \(cat.name) (now \(formatINR(top.value))) by \(formatINR(shortfall))/mo would close the gap.",
+                    actionLabel: nil
+                ))
+            }
+        }
+
         return out
+    }
+
+    /// Find merchants with ≥3 occurrences across distinct months at roughly the
+    /// same amount (within 15%), that AREN'T already in the subscriptions/EMI
+    /// category. Result sorted by total amount descending.
+    private static func findUnflaggedRecurring(in transactions: [TransactionEntity]) -> [(merchant: String, amount: Decimal)] {
+        let cal = Calendar.current
+        let candidates = transactions.filter {
+            $0.isDebit && $0.categorySlug != "subscriptions" && $0.categorySlug != "emi"
+        }
+        let byMerchant = Dictionary(grouping: candidates) { txn -> String in
+            (txn.merchantName.isEmpty ? txn.merchantRaw : txn.merchantName).lowercased()
+        }
+        var results: [(String, Decimal)] = []
+        for (key, txns) in byMerchant where txns.count >= 3 {
+            let monthsHit = Set(txns.map { cal.dateComponents([.year, .month], from: $0.date) }).count
+            guard monthsHit >= 3 else { continue }
+            // Amount tightly clustered?
+            let amounts = txns.map { Double(truncating: $0.amount as NSDecimalNumber) }
+            let avg = amounts.reduce(0, +) / Double(amounts.count)
+            let withinBand = amounts.allSatisfy { abs($0 - avg) / avg < 0.15 }
+            guard withinBand else { continue }
+            let displayName = txns.first.map { $0.merchantName.isEmpty ? $0.merchantRaw : $0.merchantName } ?? key
+            results.append((displayName, Decimal(avg)))
+        }
+        return results.sorted { $0.1 > $1.1 }
     }
 
     private static func formatINR(_ amount: Decimal) -> String {

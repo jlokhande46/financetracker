@@ -22,11 +22,19 @@ struct TransactionEntity: Identifiable, Equatable {
     var upiRef: String?
     var bankRef: String?
     var rawContent: String?
+    var intentOverride: CategoryIntent?
     var createdAt: Date
 
     var isDebit: Bool { type == .debit }
     var isCredit: Bool { type == .credit }
     var needsReview: Bool { !isConfirmed && confidence < 0.85 }
+
+    /// Intent for the 50/30/20 breakdown. User-set override takes precedence
+    /// over the category's default mapping.
+    var effectiveIntent: CategoryIntent? {
+        if let override = intentOverride { return override }
+        return CategoryEntity.find(slug: categorySlug).intent
+    }
 
     init(
         id: UUID = UUID(),
@@ -50,6 +58,7 @@ struct TransactionEntity: Identifiable, Equatable {
         upiRef: String? = nil,
         bankRef: String? = nil,
         rawContent: String? = nil,
+        intentOverride: CategoryIntent? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -73,6 +82,7 @@ struct TransactionEntity: Identifiable, Equatable {
         self.upiRef = upiRef
         self.bankRef = bankRef
         self.rawContent = rawContent
+        self.intentOverride = intentOverride
         self.createdAt = createdAt
     }
 }

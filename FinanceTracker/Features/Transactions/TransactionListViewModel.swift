@@ -195,6 +195,18 @@ final class TransactionListViewModel {
         applyFilters()
     }
 
+    /// Set or clear the user's per-transaction intent override. Pass `nil` to
+    /// fall back to the category's default intent.
+    func setIntentOverride(transaction: TransactionEntity, intent: CategoryIntent?) {
+        var updated = transaction
+        updated.intentOverride = intent
+        transactionRepo.update(updated)
+        if let idx = allTransactions.firstIndex(where: { $0.id == transaction.id }) {
+            allTransactions[idx] = updated
+        }
+        applyFilters()
+    }
+
     func updateTransaction(_ updated: TransactionEntity) {
         transactionRepo.update(updated)
         if let idx = allTransactions.firstIndex(where: { $0.id == updated.id }) {

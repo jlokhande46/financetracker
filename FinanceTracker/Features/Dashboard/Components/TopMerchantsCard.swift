@@ -40,7 +40,7 @@ struct TopMerchantsCard: View {
 
                         if idx < merchants.count - 1 {
                             Divider()
-                                .background(Color.white.opacity(0.06))
+                                .background(Color.chartGrid)
                                 .padding(.vertical, Spacing.xs)
                         }
                     }

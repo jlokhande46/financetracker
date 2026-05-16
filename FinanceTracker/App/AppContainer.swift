@@ -10,6 +10,7 @@ class AppContainer {
     let budgetRepo: BudgetRepositoryImpl
     let cardStatementRepo: CardStatementRepositoryImpl
     let goalRepo: GoalRepositoryImpl
+    let billCycleManager: BillCycleManager
 
     init(modelContext: ModelContext) {
         self.transactionRepo     = TransactionRepositoryImpl(modelContext: modelContext)
@@ -17,6 +18,11 @@ class AppContainer {
         self.budgetRepo          = BudgetRepositoryImpl(modelContext: modelContext)
         self.cardStatementRepo   = CardStatementRepositoryImpl(modelContext: modelContext)
         self.goalRepo            = GoalRepositoryImpl(modelContext: modelContext)
+        self.billCycleManager    = BillCycleManager(
+            accountRepo: accountRepo,
+            statementRepo: cardStatementRepo,
+            transactionRepo: transactionRepo
+        )
 
         // Always sync user's real cards so account auto-linking works
         // regardless of whether sample data was cleared.
@@ -27,6 +33,10 @@ class AppContainer {
         if !seedDisabled {
             transactionRepo.seedSampleData()
         }
+
+        // Run the bill-cycle sweep so any overdue statements are created and any
+        // already-paid ones get marked.
+        billCycleManager.runDailySweep()
     }
 
     /// Permanently delete every transaction, account, budget, merchant rule, and statement.

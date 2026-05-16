@@ -94,7 +94,7 @@ struct CategoryTrendChart: View {
                             .foregroundStyle(Color.textSecondary)
                             .font(.micro)
                         AxisGridLine()
-                            .foregroundStyle(Color.white.opacity(0.05))
+                            .foregroundStyle(Color.chartGrid)
                     }
                 }
                 .chartYAxis {
@@ -106,34 +106,27 @@ struct CategoryTrendChart: View {
                                     .foregroundColor(.textSecondary)
                             }
                             AxisGridLine()
-                                .foregroundStyle(Color.white.opacity(0.05))
+                                .foregroundStyle(Color.chartGrid)
                         }
                     }
                 }
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        let x = value.location.x - geo.frame(in: .local).minX
-                                        if let date: Date = proxy.value(atX: x, as: Date.self) {
-                                            highlightedMonth = last6Months.min(by: {
-                                                abs($0.month.timeIntervalSince(date)) <
-                                                abs($1.month.timeIntervalSince(date))
-                                            })?.month
-                                        }
-                                    }
-                                    .onEnded { _ in
-                                        withAnimation(.easeOut(duration: 0.25)) {
-                                            highlightedMonth = nil
-                                        }
-                                    }
-                            )
+                .chartXSelection(value: Binding(
+                    get: { highlightedMonth },
+                    set: { date in
+                        var t = Transaction()
+                        t.disablesAnimations = true
+                        withTransaction(t) {
+                            if let d = date {
+                                highlightedMonth = last6Months.min(by: {
+                                    abs($0.month.timeIntervalSince(d)) <
+                                    abs($1.month.timeIntervalSince(d))
+                                })?.month
+                            } else {
+                                highlightedMonth = nil
+                            }
+                        }
                     }
-                }
+                ))
                 .frame(height: 180)
                 .animation(.easeOut(duration: 0.7), value: animateChart)
 

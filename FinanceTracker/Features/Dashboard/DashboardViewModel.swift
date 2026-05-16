@@ -88,11 +88,16 @@ final class DashboardViewModel {
         analysis = computed
         insights = generateInsights(from: computed)
 
-        // Smart insights — uses goals + monthly income/spend
+        // Smart insights — uses goals + monthly income/spend AND trailing history
+        // for anomaly detection / recurring-transaction discovery.
         let goals = goalRepo?.fetchAll() ?? []
         let monthlyIncome = monthTxns.filter(\.isCredit).reduce(Decimal(0)) { $0 + $1.amount }
+        let cal = Calendar.current
+        let sixMonthsAgo = cal.date(byAdding: .month, value: -6, to: selectedMonth) ?? Date.distantPast
+        let history = all.filter { $0.date >= sixMonthsAgo && $0.date < selectedMonth }
         smartInsights = SmartInsightsEngine.generate(
             transactions: monthTxns,
+            historicalTransactions: history,
             goals: goals,
             monthlyIncome: monthlyIncome
         )

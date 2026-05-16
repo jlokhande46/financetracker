@@ -382,6 +382,32 @@ struct TransactionFeedView: View {
                         }
                         .tint(Color.warningAmber)
                     }
+                    // Left-edge swipe: tag this transaction as a Need (green) or a Want (amber).
+                    // A third button clears any override so the category's default applies.
+                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                        Button {
+                            withAnimation { viewModel.setIntentOverride(transaction: txn, intent: .need) }
+                        } label: {
+                            Label("Need", systemImage: CategoryIntent.need.icon)
+                        }
+                        .tint(CategoryIntent.need.color)
+
+                        Button {
+                            withAnimation { viewModel.setIntentOverride(transaction: txn, intent: .want) }
+                        } label: {
+                            Label("Want", systemImage: CategoryIntent.want.icon)
+                        }
+                        .tint(CategoryIntent.want.color)
+
+                        if txn.intentOverride != nil {
+                            Button {
+                                withAnimation { viewModel.setIntentOverride(transaction: txn, intent: nil) }
+                            } label: {
+                                Label("Clear", systemImage: "arrow.uturn.backward")
+                            }
+                            .tint(Color.neutralGray)
+                        }
+                    }
 
                     if txn.id != group.transactions.last?.id {
                         Divider()

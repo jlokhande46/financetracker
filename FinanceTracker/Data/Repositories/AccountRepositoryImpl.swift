@@ -28,9 +28,19 @@ class AccountRepositoryImpl {
             creditLimit: entity.creditLimit.map { Double(truncating: $0 as NSDecimalNumber) },
             colorHex: entity.colorHex,
             isActive: entity.isActive,
+            statementDay: entity.statementDay,
+            dueDay: entity.dueDay,
             createdAt: entity.createdAt
         )
         modelContext.insert(model)
+        try? modelContext.save()
+    }
+
+    /// Update just the bill-cycle days for an existing account.
+    func updateCycleDays(id: UUID, statementDay: Int?, dueDay: Int?) {
+        guard let model = (try? modelContext.fetch(FetchDescriptor<AccountModel>()))?.first(where: { $0.id == id }) else { return }
+        model.statementDay = statementDay
+        model.dueDay = dueDay
         try? modelContext.save()
     }
 

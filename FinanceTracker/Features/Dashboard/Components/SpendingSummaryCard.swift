@@ -58,7 +58,7 @@ struct SpendingSummaryCard: View {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.white.opacity(0.1))
+                                .fill(Color.divider)
                                 .frame(height: 6)
 
                             RoundedRectangle(cornerRadius: 4)
@@ -94,7 +94,7 @@ struct SpendingSummaryCard: View {
                     )
 
                     Rectangle()
-                        .fill(Color.white.opacity(0.1))
+                        .fill(Color.divider)
                         .frame(width: 1, height: 40)
                         .padding(.horizontal, Spacing.lg)
 

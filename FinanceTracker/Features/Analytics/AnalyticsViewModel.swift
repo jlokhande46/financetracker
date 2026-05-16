@@ -19,7 +19,7 @@ final class AnalyticsViewModel {
         var wants: Decimal = 0
         var savings: Decimal = 0
         for txn in transactions where txn.isDebit {
-            guard let intent = CategoryEntity.find(slug: txn.categorySlug).intent else { continue }
+            guard let intent = txn.effectiveIntent else { continue }
             switch intent {
             case .need:   needs += txn.amount
             case .want:   wants += txn.amount

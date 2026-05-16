@@ -32,6 +32,10 @@ extension Color {
         })
     }
 
+    /// Faint divider/grid that's white-on-dark, near-black-on-light.
+    static let chartGrid = Color.adaptive(dark: "#FFFFFF", light: "#1C1C24").opacity(0.06)
+    static let divider   = Color.adaptive(dark: "#FFFFFF", light: "#1C1C24").opacity(0.10)
+
     // Category colors
     static let catFood          = Color(hex: "#FF8C42")
     static let catTravel        = Color(hex: "#4ECDC4")
