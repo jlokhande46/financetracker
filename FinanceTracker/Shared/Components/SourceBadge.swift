@@ -32,12 +32,15 @@ struct SourceBadge: View {
 
             Text(source.displayName)
                 .font(.micro)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(badgeColor)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
         .background(badgeColor.opacity(0.15))
         .clipShape(Capsule())
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

@@ -82,9 +82,25 @@ class CategoryClassifier {
         return nil
     }
 
+    /// CC-payment narrations that should always classify as the "cc_payment" transfer.
+    /// Kept here (not in keywordRules) because they need higher priority than amount
+    /// heuristics and apply only to credits.
+    private let ccPaymentMarkers: [String] = [
+        "cc payment", "card payment", "bppy cc", "bppy/", "bppy ",
+        "payment received", "payment thank you", "payment - thank you",
+        "credit card payment", "bill payment received", "auto debit-cc payment"
+    ]
+
     func classify(merchantName: String, amount: Decimal, type: TransactionType, rawContent: String? = nil) -> ClassificationResult {
         let lower = merchantName.lowercased()
         let rawLower = (rawContent ?? "").lowercased()
+
+        // 0. CC-payment shortcut — runs BEFORE everything because a ₹26K CC payment
+        // would otherwise hit the amount-based "salary" rule and look like income.
+        if type == .credit,
+           ccPaymentMarkers.contains(where: { lower.contains($0) || rawLower.contains($0) }) {
+            return ClassificationResult(categorySlug: "cc_payment", confidence: 1.0, source: .keywordMatch)
+        }
 
         // 1. User-defined rules win (learned from past corrections)
         if let userSlug = MainActor.assumeIsolated({
