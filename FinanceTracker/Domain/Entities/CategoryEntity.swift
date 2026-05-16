@@ -58,6 +58,7 @@ struct CategoryEntity: Identifiable, Equatable {
         CategoryEntity(id: UUID(), name: "Freelance",        slug: "freelance",     icon: "laptopcomputer",              colorHex: "#4ADE80", isIncome: true,  isTransfer: false, parentSlug: nil, isSystem: true, sortOrder: 23),
         CategoryEntity(id: UUID(), name: "Refund",           slug: "refund",        icon: "arrow.uturn.left",            colorHex: "#34D399", isIncome: true,  isTransfer: false, parentSlug: nil, isSystem: true, sortOrder: 24),
         CategoryEntity(id: UUID(), name: "Transfer",         slug: "transfer",      icon: "arrow.left.arrow.right",      colorHex: "#64748B", isIncome: false, isTransfer: true,  parentSlug: nil, isSystem: true, sortOrder: 25),
+        CategoryEntity(id: UUID(), name: "CC Payment",       slug: "cc_payment",    icon: "creditcard.and.123",          colorHex: "#A78BFA", isIncome: false, isTransfer: true,  parentSlug: nil, isSystem: true, sortOrder: 26),
     ]
 
     static func find(slug: String) -> CategoryEntity {

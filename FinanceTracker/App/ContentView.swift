@@ -100,7 +100,7 @@ struct ContentView: View {
             .tabItem {
                 Label(Tab.home.title, systemImage: Tab.home.icon)
             }
-            .badge(unreadInsightCount > 0 ? unreadInsightCount : 0)
+            .badge(unreadInsightCount > 0 ? "•" : nil)
             .tag(Tab.home)
 
             // Transactions
@@ -108,7 +108,7 @@ struct ContentView: View {
             .tabItem {
                 Label(Tab.transactions.title, systemImage: Tab.transactions.icon)
             }
-            .badge(pendingReviewCount > 0 ? pendingReviewCount : 0)
+            .badge(pendingReviewCount > 0 ? "•" : nil)
             .tag(Tab.transactions)
 
             // Analytics
@@ -153,13 +153,25 @@ struct ContentView: View {
     // MARK: - UITabBar Styling
 
     private func styleTabBar() {
+        // Dynamic backgrounds via UIColor providers so the tab bar follows light/dark.
+        let bgColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(Color(hex: "#141418"))
+                : UIColor(Color(hex: "#FFFFFF"))
+        }
+        let normalIconColor = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(Color(hex: "#8E8E99"))
+                : UIColor(Color(hex: "#6C6C72"))
+        }
+
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(Color.bgSecondary)
+        appearance.backgroundColor = bgColor
 
-        appearance.stackedLayoutAppearance.normal.iconColor = UIColor(Color.textSecondary)
+        appearance.stackedLayoutAppearance.normal.iconColor = normalIconColor
         appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
-            .foregroundColor: UIColor(Color.textSecondary)
+            .foregroundColor: normalIconColor
         ]
         appearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color.brandPrimary)
         appearance.stackedLayoutAppearance.selected.titleTextAttributes = [

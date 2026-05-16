@@ -13,10 +13,21 @@ struct FinanceTrackerApp: App {
     // MARK: - Onboarding
     @AppStorage("hasOnboarded") private var hasOnboarded: Bool = false
 
+    // MARK: - Theme — "system" | "light" | "dark"
+    @AppStorage("themePreference") private var themePreference: String = "dark"
+
     // MARK: - Face ID lock
     @AppStorage("faceIDEnabled") private var faceIDEnabled: Bool = false
     @State private var isUnlocked: Bool = false
     @Environment(\.scenePhase) private var scenePhase
+
+    private var preferredScheme: ColorScheme? {
+        switch themePreference {
+        case "light": return .light
+        case "dark":  return .dark
+        default:      return nil   // .system → follow device
+        }
+    }
 
     // MARK: - Init
 
@@ -68,7 +79,7 @@ struct FinanceTrackerApp: App {
                 ContentView()
                     .environment(\.appContainer, appContainer)
                     .modelContainer(modelContainer)
-                    .preferredColorScheme(.dark)
+                    .preferredColorScheme(preferredScheme)
                     .fullScreenCover(isPresented: Binding(
                         get: { !hasOnboarded },
                         set: { _ in }

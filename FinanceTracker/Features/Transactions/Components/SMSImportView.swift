@@ -78,7 +78,6 @@ struct SMSImportView: View {
             .navigationTitle(isAutoMode ? "Logging Transaction" : "Paste SMS")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.bgPrimary, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -179,10 +178,10 @@ struct SMSImportView: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("iOS doesn't allow direct SMS reading.")
+                Text("Paste a bank SMS")
                     .font(.titleMedium)
                     .foregroundColor(.textPrimary)
-                Text("Forward your bank SMS here and we'll parse it automatically into a transaction.")
+                Text("We'll parse the amount, merchant, card, and category automatically.")
                     .font(.bodyMedium)
                     .foregroundColor(.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

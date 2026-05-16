@@ -1,24 +1,37 @@
 import SwiftUI
 
 struct QuickReviewSheet: View {
-    let transactions: [TransactionEntity]
     /// (transaction, newName, newCategorySlug, rememberName, rememberCategory)
     var onConfirm: (TransactionEntity, String, String, Bool, Bool) -> Void
     var onSkip: (TransactionEntity) -> Void
     var onDelete: (TransactionEntity) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var snapshot: [TransactionEntity]
     @State private var index: Int = 0
     @State private var editName: String = ""
     @State private var selectedSlug: String = "others"
-    @State private var rememberName: Bool = false
-    @State private var rememberCategory: Bool = false
-    @State private var animateIn = false
+    @State private var rememberName: Bool = true
+    @State private var rememberCategory: Bool = true
     @FocusState private var nameFieldFocused: Bool
 
+    init(
+        transactions: [TransactionEntity],
+        onConfirm: @escaping (TransactionEntity, String, String, Bool, Bool) -> Void,
+        onSkip: @escaping (TransactionEntity) -> Void,
+        onDelete: @escaping (TransactionEntity) -> Void
+    ) {
+        // Snapshot the list ONCE so parent mutations during review (e.g. removing a
+        // confirmed transaction from the pending list) don't shift our indices.
+        self._snapshot = State(initialValue: transactions)
+        self.onConfirm = onConfirm
+        self.onSkip = onSkip
+        self.onDelete = onDelete
+    }
+
     private var current: TransactionEntity? {
-        guard index >= 0, index < transactions.count else { return nil }
-        return transactions[index]
+        guard index >= 0, index < snapshot.count else { return nil }
+        return snapshot[index]
     }
 
     private var category: CategoryEntity {
@@ -49,19 +62,16 @@ struct QuickReviewSheet: View {
                         VStack(spacing: Spacing.lg) {
                             progressBar
                             transactionCard(txn)
+                                .id(index)   // force fresh view per row — kills state-mix bugs
+                                .transition(.opacity)
                             rememberToggles
+                                .id(index)
                         }
                         .padding(.horizontal, Spacing.base)
                         .padding(.top, Spacing.sm)
                         .padding(.bottom, 110)
-                        .opacity(animateIn ? 1 : 0)
-                        .offset(y: animateIn ? 0 : 20)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: index)
                     }
-                    .onAppear {
-                        loadCurrent()
-                        animateIn = true
-                    }
+                    .onAppear { loadCurrent() }
 
                     // Sticky bottom action bar
                     VStack {
@@ -77,7 +87,6 @@ struct QuickReviewSheet: View {
             .navigationTitle("Quick Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.bgPrimary, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -91,7 +100,7 @@ struct QuickReviewSheet: View {
 
     private var progressBar: some View {
         HStack(spacing: Spacing.sm) {
-            Text("\(min(index + 1, transactions.count)) of \(transactions.count)")
+            Text("\(min(index + 1, snapshot.count)) of \(snapshot.count)")
                 .font(.micro)
                 .foregroundStyle(Color.textSecondary)
                 .monospacedDigit()
@@ -102,7 +111,7 @@ struct QuickReviewSheet: View {
                         .frame(height: 4)
                     Capsule()
                         .fill(Color.brandPrimary)
-                        .frame(width: max(0, geo.size.width * CGFloat(Double(index + 1) / Double(max(1, transactions.count)))), height: 4)
+                        .frame(width: max(0, geo.size.width * CGFloat(Double(index + 1) / Double(max(1, snapshot.count)))), height: 4)
                         .animation(.easeOut(duration: 0.3), value: index)
                 }
             }
@@ -359,18 +368,18 @@ struct QuickReviewSheet: View {
         guard let txn = current else { return }
         editName = txn.merchantName.isEmpty ? txn.merchantRaw : txn.merchantName
         selectedSlug = txn.categorySlug
-        rememberName = false
-        rememberCategory = false
+        // Default to ON — the user wants their corrections to be remembered by default.
+        rememberName = true
+        rememberCategory = true
         nameFieldFocused = false
     }
 
     private func advance() {
-        animateIn = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        nameFieldFocused = false
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             index += 1
-            loadCurrent()
-            animateIn = true
         }
+        loadCurrent()
     }
 
     private func formatAmount(_ amount: Decimal) -> String {

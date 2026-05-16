@@ -5,6 +5,9 @@ struct DashboardView: View {
 
     @State var viewModel: DashboardViewModel
     @State private var appearAnimation = false
+    @State private var showQuickReview = false
+    @State private var selectedAccount: AccountEntity? = nil
+    @State private var showAllMerchants = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +33,37 @@ struct DashboardView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .task { await viewModel.load() }
+            .sheet(isPresented: $showQuickReview) {
+                QuickReviewSheet(
+                    transactions: viewModel.pendingReviewTransactions,
+                    onConfirm: { txn, newName, newSlug, rememberName, rememberCategory in
+                        viewModel.confirmReview(
+                            transaction: txn,
+                            newName: newName,
+                            newSlug: newSlug,
+                            rememberName: rememberName,
+                            rememberCategory: rememberCategory
+                        )
+                    },
+                    onSkip: { _ in },
+                    onDelete: { txn in viewModel.deleteTransaction(txn.id) }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .onDisappear { Task { await viewModel.load() } }
+            }
+            .sheet(item: $selectedAccount) { acc in
+                AccountDetailView(account: acc)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showAllMerchants) {
+                if let analysis = viewModel.analysis {
+                    AllMerchantsSheet(merchants: analysis.topMerchants)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
+            }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.4)) {
                     appearAnimation = true
@@ -126,7 +160,7 @@ struct DashboardView: View {
                     .animation(.easeOut(duration: 0.4).delay(0.25), value: appearAnimation)
 
                 // Top Merchants
-                TopMerchantsCard(merchants: analysis.topMerchants)
+                TopMerchantsCard(merchants: analysis.topMerchants, onViewAll: { showAllMerchants = true })
                     .padding(.horizontal, Spacing.base)
                     .opacity(appearAnimation ? 1 : 0)
                     .animation(.easeOut(duration: 0.4).delay(0.3), value: appearAnimation)
@@ -158,7 +192,7 @@ struct DashboardView: View {
 
     // MARK: - Pending Review Banner
     private var pendingReviewBanner: some View {
-        Button(action: {}) {
+        Button(action: { showQuickReview = true }) {
             HStack(spacing: Spacing.md) {
                 ZStack {
                     Circle()
@@ -265,7 +299,10 @@ struct DashboardView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Spacing.md) {
                     ForEach(viewModel.accounts.filter(\.isActive)) { account in
-                        AccountBalanceChip(account: account)
+                        Button { selectedAccount = account } label: {
+                            AccountBalanceChip(account: account)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, Spacing.base)

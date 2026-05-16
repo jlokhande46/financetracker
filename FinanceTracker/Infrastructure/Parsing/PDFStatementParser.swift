@@ -75,6 +75,40 @@ final class PDFStatementParser {
     // MARK: - Due-date & statement-field extraction
 
     private func extractDueDate(in text: String) -> Date? {
+        if let raw = matchDueDate(in: text) {
+            return sanitisedDueDate(raw)
+        }
+        return nil
+    }
+
+    /// Discard parses that landed implausibly far from "now". If the regex captured
+    /// a date months in the past (year mis-parsed, fragment grabbed from elsewhere),
+    /// try shifting it to the current/next year. If even that fails, return nil so
+    /// the user isn't shown "Due 943 days ago".
+    private func sanitisedDueDate(_ candidate: Date) -> Date? {
+        let cal = Calendar.current
+        let now = Date()
+        let diffDays = (cal.dateComponents([.day], from: now, to: candidate).day ?? 0)
+
+        // Plausible: 60 days in past (just-overdue) to 60 days in future
+        if diffDays >= -60 && diffDays <= 60 { return candidate }
+
+        // Try same day-month in the current year
+        var comps = cal.dateComponents([.day, .month], from: candidate)
+        comps.year = cal.component(.year, from: now)
+        if let shifted = cal.date(from: comps) {
+            let shiftedDiff = (cal.dateComponents([.day], from: now, to: shifted).day ?? 0)
+            if shiftedDiff >= -60 && shiftedDiff <= 60 { return shifted }
+            // If even current-year placement is in the recent past, advance to next year
+            if shiftedDiff < -60 {
+                comps.year = cal.component(.year, from: now) + 1
+                if let nextYear = cal.date(from: comps) { return nextYear }
+            }
+        }
+        return nil
+    }
+
+    private func matchDueDate(in text: String) -> Date? {
         // Patterns ordered by specificity
         let patterns: [(String, [String])] = [
             // "Payment Due Date : 27 May 2026"
@@ -218,10 +252,9 @@ final class PDFStatementParser {
     // MARK: - Transaction line detection
 
     private func looksLikeTransactionLine(_ line: String) -> Bool {
-        // A line that has a date AND a number that looks like an amount
         let hasDate = line.range(of: #"\d{1,2}[/\-][A-Za-z0-9]{2,9}[/\-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}"#,
                                   options: .regularExpression) != nil
-        let hasAmount = line.range(of: #"\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})"#,
+        let hasAmount = line.range(of: #"(?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d+\.\d{2})|(?:\d{4,})"#,
                                     options: .regularExpression) != nil
         return hasDate && hasAmount
     }
@@ -255,16 +288,33 @@ final class PDFStatementParser {
         guard inferred.amount > 0 else { return nil }
 
         let normalizedMerchant = normalizer.normalize(narration)
-        let classification = classifier.classify(
-            merchantName: normalizedMerchant,
-            amount: inferred.amount,
-            type: inferred.type,
-            rawContent: line
-        )
+
+        // CC Payment shortcut: if narration screams "card payment" AND we inferred credit,
+        // bypass the normal classifier and tag as transfer-type cc_payment.
+        let lower = line.lowercased()
+        let isCCPayment = inferred.type == .credit &&
+            (lower.contains("cc payment") || lower.contains("bppy") ||
+             lower.contains("card payment") || lower.contains("payment received") ||
+             lower.contains("payment thank you"))
+
+        let categorySlug: String
+        let categoryConfidence: Double
+        if isCCPayment {
+            categorySlug = "cc_payment"
+            categoryConfidence = 1.0
+        } else {
+            let classification = classifier.classify(
+                merchantName: normalizedMerchant,
+                amount: inferred.amount,
+                type: inferred.type,
+                rawContent: line
+            )
+            categorySlug = classification.categorySlug
+            categoryConfidence = classification.confidence
+        }
 
         // Final confidence is the LOWER of category-confidence and direction-confidence.
-        // A row we couldn't confidently classify as debit/credit gets sent to "Review".
-        let finalConfidence = min(classification.confidence, inferred.directionConfidence)
+        let finalConfidence = min(categoryConfidence, inferred.directionConfidence)
 
         return TransactionEntity(
             id: UUID(),
@@ -272,7 +322,7 @@ final class PDFStatementParser {
             type: inferred.type,
             merchantRaw: narration,
             merchantName: normalizedMerchant,
-            categorySlug: classification.categorySlug,
+            categorySlug: categorySlug,
             date: date,
             source: .pdf,
             confidence: finalConfidence,
@@ -370,7 +420,13 @@ final class PDFStatementParser {
     }
 
     private func extractAmounts(in line: String) -> [AmountMatch] {
-        let pattern = #"(\d{1,3}(?:[,\s]\d{3})*\.\d{2})\s*(Cr|Dr|CR|DR)?"#
+        // Match amounts only when they're clearly amounts:
+        //   (a) comma-separated numbers with optional decimal: 1,000 or 1,000.00
+        //   (b) decimal-only numbers: 100.00, 100.5
+        // We deliberately do NOT match bare 4-digit integers because that would gobble
+        // years out of dates (e.g. "07/05/2026" → 2026), breaking the date-before-amount
+        // guard in parseTransactionLine and silently dropping every row.
+        let pattern = #"((?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2}))\s*(Cr|Dr|CR|DR)?"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
 
         let range = NSRange(line.startIndex..., in: line)

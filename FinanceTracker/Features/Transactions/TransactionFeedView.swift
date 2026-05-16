@@ -70,7 +70,6 @@ struct TransactionFeedView: View {
             }
             .navigationTitle("Transactions")
             .navigationBarTitleDisplayMode(.large)
-            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button {

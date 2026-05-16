@@ -10,6 +10,7 @@ final class DashboardViewModel {
     var transactions: [TransactionEntity] = []
     var analysis: MonthlyAnalysis?
     var pendingReviewCount: Int = 0
+    var pendingReviewTransactions: [TransactionEntity] = []
     var accounts: [AccountEntity] = []
     var insights: [InsightEntity] = []
     var isLoading: Bool = false
@@ -41,6 +42,31 @@ final class DashboardViewModel {
         upcomingStatements.removeAll { $0.id == id }
     }
 
+    func confirmReview(transaction: TransactionEntity, newName: String?, newSlug: String, rememberName: Bool, rememberCategory: Bool) {
+        var updated = transaction
+        if let n = newName, !n.isEmpty { updated.merchantName = n }
+        updated.categorySlug = newSlug
+        updated.isConfirmed = true
+        updated.confidence = 1.0
+        transactionRepo.update(updated)
+        pendingReviewTransactions.removeAll { $0.id == transaction.id }
+        pendingReviewCount = pendingReviewTransactions.count
+
+        if rememberName || rememberCategory {
+            MerchantRuleStore.shared.saveRule(
+                merchant: transaction.merchantRaw.isEmpty ? transaction.merchantName : transaction.merchantRaw,
+                categorySlug: rememberCategory ? newSlug : nil,
+                displayName: rememberName ? newName : nil
+            )
+        }
+    }
+
+    func deleteTransaction(_ id: UUID) {
+        transactionRepo.delete(id: id)
+        pendingReviewTransactions.removeAll { $0.id == id }
+        pendingReviewCount = pendingReviewTransactions.count
+    }
+
     // MARK: - Public Methods
 
     func load() async {
@@ -55,6 +81,7 @@ final class DashboardViewModel {
         let pending = transactionRepo.fetchPendingReview()
 
         transactions = monthTxns
+        pendingReviewTransactions = pending
         pendingReviewCount = pending.count
 
         let computed = computeAnalysis(monthTxns, allTransactions: all)

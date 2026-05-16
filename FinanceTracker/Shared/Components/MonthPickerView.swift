@@ -148,7 +148,6 @@ private struct DatePickerSheet: View {
                 }
             }
             .toolbarBackground(Color.bgCard, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
         }
     }
 }

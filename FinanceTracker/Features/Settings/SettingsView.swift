@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("faceIDEnabled") private var faceIDEnabled: Bool = false
     @AppStorage("userName") private var userName: String = "Jayesh Lokhande"
     @AppStorage("userEmail") private var userEmail: String = "jayesh@example.com"
+    @AppStorage("themePreference") private var themePreference: String = "dark"
 
     @State private var showDocumentPicker: Bool = false
     @State private var showClearDataAlert: Bool = false
@@ -26,6 +27,7 @@ struct SettingsView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: Spacing.xl) {
                         profileSection
+                        appearanceSection
                         dataImportSection
                         privacySection
                         aboutSection
@@ -38,7 +40,6 @@ struct SettingsView: View {
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(Color.bgPrimary, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
         }
         .toast(isPresented: $showToast, message: toastMessage, type: toastType)
         .fileImporter(
@@ -111,6 +112,42 @@ struct SettingsView: View {
     }
 
     // MARK: - Data Import Section
+
+    // MARK: - Appearance
+
+    private var appearanceSection: some View {
+        SettingsSectionCard(title: "Appearance") {
+            HStack {
+                HStack(spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Radius.sm)
+                            .fill(Color.brandPrimary)
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "moon.stars.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Theme")
+                            .font(.bodyMedium)
+                            .foregroundColor(.textPrimary)
+                        Text("System follows your iPhone setting")
+                            .font(.caption)
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+                Spacer()
+                Picker("Theme", selection: $themePreference) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }
+                .pickerStyle(.menu)
+                .tint(Color.brandPrimary)
+            }
+            .padding(Spacing.base)
+        }
+    }
 
     private var dataImportSection: some View {
         SettingsSectionCard(title: "Data Import") {
