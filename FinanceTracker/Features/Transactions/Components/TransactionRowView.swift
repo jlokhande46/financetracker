@@ -4,9 +4,17 @@ struct TransactionRowView: View {
     let transaction: TransactionEntity
     var accountChip: String? = nil
     var onTap: (() -> Void)? = nil
-    /// Called when the user taps the intent chip or picks an option from the
-    /// context menu. Pass `nil` to clear any override.
+    /// Called when the user taps the intent chip, swipes the row, or picks an
+    /// option from the context menu. Pass `nil` to clear any override.
     var onSetIntent: ((CategoryIntent?) -> Void)? = nil
+
+    @State private var dragOffset: CGFloat = 0
+    @State private var didFireHaptic: Bool = false
+
+    /// Distance past which a swipe commits the intent change.
+    private let swipeCommitThreshold: CGFloat = 80
+    /// Max horizontal travel (prevents the row sliding off-screen).
+    private let swipeCap: CGFloat = 140
 
     private var category: CategoryEntity {
         CategoryEntity.find(slug: transaction.categorySlug)
@@ -49,18 +57,30 @@ struct TransactionRowView: View {
     }
 
     var body: some View {
-        Button {
-            onTap?()
-        } label: {
-            HStack(spacing: Spacing.md) {
+        ZStack {
+            swipeRevealBackground
+            rowContent
+                .background(Color.bgCard)
+                .offset(x: dragOffset)
+                .gesture(swipeGesture, including: transaction.isCredit ? .subviews : .all)
+                .onTapGesture { onTap?() }
+        }
+        .clipped()
+        .contextMenu { contextMenuItems }
+    }
 
-                // Pending review left accent
-                if transaction.needsReview {
-                    Rectangle()
-                        .fill(Color.warningAmber)
-                        .frame(width: 3)
-                        .clipShape(RoundedRectangle(cornerRadius: 2))
-                }
+    // MARK: - Foreground content (the row itself)
+
+    private var rowContent: some View {
+        HStack(spacing: Spacing.md) {
+
+            // Pending review left accent
+            if transaction.needsReview {
+                Rectangle()
+                    .fill(Color.warningAmber)
+                    .frame(width: 3)
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+            }
 
                 // Category Icon
                 CategoryIconView(slug: transaction.categorySlug, size: 44)
@@ -154,37 +174,120 @@ struct TransactionRowView: View {
                         .contentTransition(.numericText())
                 }
             }
-            .padding(.vertical, Spacing.md)
-            .padding(.horizontal, transaction.needsReview ? 0 : Spacing.base)
-            .contentShape(Rectangle())
+        .padding(.vertical, Spacing.md)
+        .padding(.horizontal, transaction.needsReview ? 0 : Spacing.base)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Swipe reveal layers
+
+    /// The Need / Want labels that sit behind the row and peek through as the user drags.
+    @ViewBuilder
+    private var swipeRevealBackground: some View {
+        if !transaction.isCredit {
+            HStack(spacing: 0) {
+                // Drag-right (positive offset) reveals NEED on the left edge.
+                HStack(spacing: 8) {
+                    Image(systemName: CategoryIntent.need.icon)
+                    Text("Need")
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24)
+                .frame(width: max(0, dragOffset), alignment: .leading)
+                .frame(maxHeight: .infinity)
+                .background(CategoryIntent.need.color)
+                .opacity(dragOffset > 0 ? 1 : 0)
+
+                Spacer(minLength: 0)
+
+                // Drag-left (negative offset) reveals WANT on the right edge.
+                HStack(spacing: 8) {
+                    Text("Want")
+                    Image(systemName: CategoryIntent.want.icon)
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24)
+                .frame(width: max(0, -dragOffset), alignment: .trailing)
+                .frame(maxHeight: .infinity)
+                .background(CategoryIntent.want.color)
+                .opacity(dragOffset < 0 ? 1 : 0)
+            }
+            .allowsHitTesting(false)
         }
-        .buttonStyle(.plain)
-        // Long-press menu — works inside LazyVStack (unlike .swipeActions which is
-        // List-only). Gives the user a reliable way to set the intent for any row.
-        .contextMenu {
-            if !transaction.isCredit {
-                Button {
+    }
+
+    // MARK: - Swipe gesture
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 15)
+            .onChanged { value in
+                // Only respond to mostly-horizontal drags so we don't fight the
+                // parent scroll view on vertical pans.
+                let horizontal = value.translation.width
+                let vertical = abs(value.translation.height)
+                guard abs(horizontal) > vertical else { return }
+
+                // Resistance: slow down beyond cap so the row never flies off.
+                let clamped: CGFloat
+                if horizontal > swipeCap {
+                    clamped = swipeCap + (horizontal - swipeCap) * 0.25
+                } else if horizontal < -swipeCap {
+                    clamped = -swipeCap + (horizontal + swipeCap) * 0.25
+                } else {
+                    clamped = horizontal
+                }
+                dragOffset = clamped
+
+                // Single haptic when crossing the commit threshold.
+                if !didFireHaptic, abs(horizontal) > swipeCommitThreshold {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    didFireHaptic = true
+                } else if didFireHaptic, abs(horizontal) < swipeCommitThreshold {
+                    didFireHaptic = false
+                }
+            }
+            .onEnded { value in
+                let horizontal = value.translation.width
+                if horizontal > swipeCommitThreshold {
                     onSetIntent?(.need)
-                } label: {
-                    Label("Mark as Need", systemImage: CategoryIntent.need.icon)
-                }
-                Button {
+                } else if horizontal < -swipeCommitThreshold {
                     onSetIntent?(.want)
-                } label: {
-                    Label("Mark as Want", systemImage: CategoryIntent.want.icon)
                 }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    dragOffset = 0
+                }
+                didFireHaptic = false
+            }
+    }
+
+    // MARK: - Context menu
+
+    @ViewBuilder
+    private var contextMenuItems: some View {
+        if !transaction.isCredit {
+            Button {
+                onSetIntent?(.need)
+            } label: {
+                Label("Mark as Need", systemImage: CategoryIntent.need.icon)
+            }
+            Button {
+                onSetIntent?(.want)
+            } label: {
+                Label("Mark as Want", systemImage: CategoryIntent.want.icon)
+            }
+            Button {
+                onSetIntent?(.saving)
+            } label: {
+                Label("Mark as Saving", systemImage: CategoryIntent.saving.icon)
+            }
+            if transaction.intentOverride != nil {
+                Divider()
                 Button {
-                    onSetIntent?(.saving)
+                    onSetIntent?(nil)
                 } label: {
-                    Label("Mark as Saving", systemImage: CategoryIntent.saving.icon)
-                }
-                if transaction.intentOverride != nil {
-                    Divider()
-                    Button {
-                        onSetIntent?(nil)
-                    } label: {
-                        Label("Clear override (use category default)", systemImage: "arrow.uturn.backward")
-                    }
+                    Label("Clear override (use category default)", systemImage: "arrow.uturn.backward")
                 }
             }
         }
