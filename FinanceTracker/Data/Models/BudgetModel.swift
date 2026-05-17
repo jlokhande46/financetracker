@@ -3,12 +3,12 @@ import SwiftData
 
 @Model
 final class BudgetModel {
-    @Attribute(.unique) var id: UUID
-    var categorySlug: String
-    var amount: Double
-    var periodRaw: String
-    var startDate: Date
-    var isActive: Bool
+    @Attribute(.unique) var id: UUID = UUID()
+    var categorySlug: String = "others"
+    var amount: Double = 0
+    var periodRaw: String = "monthly"
+    var startDate: Date = Date()
+    var isActive: Bool = true
 
     var period: BudgetPeriod {
         get { BudgetPeriod(rawValue: periodRaw) ?? .monthly }

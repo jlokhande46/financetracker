@@ -2,10 +2,12 @@ import SwiftUI
 
 struct EditCategorySheet: View {
     let transaction: TransactionEntity
-    var onSave: (String, Bool) -> Void
+    /// (newSlug, rememberForMerchant, applyToPast)
+    var onSave: (String, Bool, Bool) -> Void
 
     @State private var selectedSlug: String
     @State private var rememberForMerchant: Bool = false
+    @State private var applyToPast: Bool = false
     @State private var searchText: String = ""
     @Environment(\.dismiss) private var dismiss
 
@@ -34,7 +36,7 @@ struct EditCategorySheet: View {
         return formatter.string(from: transaction.amount as NSDecimalNumber) ?? "₹\(transaction.amount)"
     }
 
-    init(transaction: TransactionEntity, onSave: @escaping (String, Bool) -> Void) {
+    init(transaction: TransactionEntity, onSave: @escaping (String, Bool, Bool) -> Void) {
         self.transaction = transaction
         self.onSave = onSave
         self._selectedSlug = State(initialValue: transaction.categorySlug)
@@ -102,28 +104,53 @@ struct EditCategorySheet: View {
                         .padding(.horizontal, Spacing.base)
 
                         // Remember toggle
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Remember for \(merchantName)")
-                                    .font(.bodyMedium)
-                                    .foregroundStyle(Color.textPrimary)
-                                Text("Auto-categorize future transactions")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.textSecondary)
+                        VStack(spacing: Spacing.sm) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Remember for \(merchantName)")
+                                        .font(.bodyMedium)
+                                        .foregroundStyle(Color.textPrimary)
+                                    Text("Auto-categorize future transactions")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.textSecondary)
+                                }
+                                Spacer()
+                                Toggle("", isOn: $rememberForMerchant)
+                                    .tint(Color.brandPrimary)
+                                    .labelsHidden()
                             }
-                            Spacer()
-                            Toggle("", isOn: $rememberForMerchant)
-                                .tint(Color.brandPrimary)
-                                .labelsHidden()
+                            .padding(Spacing.base)
+                            .background(Color.bgCard)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+
+                            // Show "apply to past" only when remembering and category changed
+                            if rememberForMerchant && selectedSlug != transaction.categorySlug {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Fix past transactions too")
+                                            .font(.bodyMedium)
+                                            .foregroundStyle(Color.textPrimary)
+                                        Text("Update all existing transactions from this merchant")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.textSecondary)
+                                    }
+                                    Spacer()
+                                    Toggle("", isOn: $applyToPast)
+                                        .tint(Color.brandPrimary)
+                                        .labelsHidden()
+                                }
+                                .padding(Spacing.base)
+                                .background(Color.bgCard)
+                                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
-                        .padding(Spacing.base)
-                        .background(Color.bgCard)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+                        .animation(.springy, value: rememberForMerchant)
                         .padding(.horizontal, Spacing.base)
 
                         // Save button
                         Button {
-                            onSave(selectedSlug, rememberForMerchant)
+                            onSave(selectedSlug, rememberForMerchant, applyToPast && rememberForMerchant)
                             dismiss()
                         } label: {
                             Text("Save Category")
@@ -203,6 +230,6 @@ private struct CategoryGridButton: View {
             merchantName: "Swiggy",
             categorySlug: "food"
         ),
-        onSave: { _, _ in }
+        onSave: { _, _, _ in }
     )
 }

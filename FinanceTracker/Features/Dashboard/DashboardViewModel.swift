@@ -42,7 +42,7 @@ final class DashboardViewModel {
         upcomingStatements.removeAll { $0.id == id }
     }
 
-    func confirmReview(transaction: TransactionEntity, newName: String?, newSlug: String, rememberName: Bool, rememberCategory: Bool) {
+    func confirmReview(transaction: TransactionEntity, newName: String?, newSlug: String, rememberName: Bool, rememberCategory: Bool, applyToPast: Bool = false) {
         var updated = transaction
         if let n = newName, !n.isEmpty { updated.merchantName = n }
         updated.categorySlug = newSlug
@@ -58,6 +58,11 @@ final class DashboardViewModel {
                 categorySlug: rememberCategory ? newSlug : nil,
                 displayName: rememberName ? newName : nil
             )
+        }
+
+        if applyToPast && rememberCategory {
+            let key = transaction.merchantRaw.isEmpty ? transaction.merchantName : transaction.merchantRaw
+            transactionRepo.bulkRecategorize(merchantRaw: key, merchantNameKey: transaction.merchantName, newSlug: newSlug)
         }
     }
 

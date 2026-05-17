@@ -3,15 +3,15 @@ import SwiftData
 
 @Model
 final class GoalModel {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var typeRaw: String
-    var targetAmountDouble: Double
-    var currentAmountDouble: Double
+    @Attribute(.unique) var id: UUID = UUID()
+    var name: String = ""
+    var typeRaw: String = "other"
+    var targetAmountDouble: Double = 0
+    var currentAmountDouble: Double = 0
     var targetDate: Date?
     var notes: String?
-    var isCompleted: Bool
-    var createdAt: Date
+    var isCompleted: Bool = false
+    var createdAt: Date = Date()
 
     init(
         id: UUID = UUID(),

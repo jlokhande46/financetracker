@@ -3,35 +3,35 @@ import SwiftData
 
 @Model
 final class TransactionModel {
-    @Attribute(.unique) var id: UUID
-    var amount: Double
-    var typeRaw: String
-    var merchantRaw: String
-    var merchantName: String
-    var categorySlug: String
+    @Attribute(.unique) var id: UUID = UUID()
+    var amount: Double = 0
+    var typeRaw: String = "debit"
+    var merchantRaw: String = ""
+    var merchantName: String = ""
+    var categorySlug: String = "others"
     var subcategorySlug: String?
-    var date: Date
-    var sourceRaw: String
-    var confidence: Double
-    var isConfirmed: Bool
-    var isRecurring: Bool
-    var isSplit: Bool
+    var date: Date = Date()
+    var sourceRaw: String = "manual"
+    var confidence: Double = 1.0
+    var isConfirmed: Bool = false
+    var isRecurring: Bool = false
+    var isSplit: Bool = false
     var parentId: UUID?
-    var tags: [String]
+    var tags: [String] = []
     var notes: String?
     var accountId: UUID?
     var receiptURL: String?
     var upiRef: String?
     var bankRef: String?
     var rawContent: String?
-    var isHidden: Bool
-    var isDeleted: Bool
+    var isHidden: Bool = false
+    var isDeleted: Bool = false
     /// Optional per-transaction intent override ("need" | "want" | "saving").
     /// When nil, the category's default intent applies. SwiftData auto-migrates
     /// existing records to nil for this new field.
     var intentOverrideRaw: String?
-    var createdAt: Date
-    var updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 
     var type: TransactionType {
         get { TransactionType(rawValue: typeRaw) ?? .debit }

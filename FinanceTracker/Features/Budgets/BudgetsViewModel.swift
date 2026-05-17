@@ -55,6 +55,9 @@ final class BudgetsViewModel {
 
         budgets = budgetRepo.fetchAll()
         transactions = transactionRepo.fetchForMonth(Date())
+
+        // Fire alerts for any budget that crossed 80 % or 100 % this period.
+        NotificationManager.shared.scheduleBudgetAlerts(budgetsWithSpend)
     }
 
     // MARK: - Compute Spent
@@ -108,6 +111,7 @@ final class BudgetsViewModel {
     func deleteBudget(id: UUID) {
         budgetRepo.delete(id: id)
         budgets.removeAll { $0.id == id }
+        NotificationManager.shared.cancelBudgetAlerts(for: id)
     }
 
     // MARK: - Helpers

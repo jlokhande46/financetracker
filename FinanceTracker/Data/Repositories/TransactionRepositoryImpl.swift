@@ -113,6 +113,27 @@ class TransactionRepositoryImpl {
         persistChanges()
     }
 
+    /// Re-categorizes all non-deleted transactions that match either `merchantRaw` or
+    /// `merchantNameKey` and currently have a different category.
+    /// Returns the number of records updated.
+    @discardableResult
+    func bulkRecategorize(merchantRaw merchantRawKey: String, merchantNameKey: String, newSlug: String) -> Int {
+        let descriptor = FetchDescriptor<TransactionModel>(
+            predicate: #Predicate<TransactionModel> { m in
+                !m.isDeleted &&
+                (m.merchantRaw == merchantRawKey || m.merchantName == merchantNameKey)
+            }
+        )
+        guard let models = try? modelContext.fetch(descriptor) else { return 0 }
+        let toUpdate = models.filter { $0.categorySlug != newSlug }
+        for model in toUpdate {
+            model.categorySlug = newSlug
+            model.updatedAt = Date()
+        }
+        if !toUpdate.isEmpty { persistChanges() }
+        return toUpdate.count
+    }
+
     func seedSampleData() {
         let count = (try? modelContext.fetch(FetchDescriptor<TransactionModel>()).count) ?? 0
         guard count == 0 else { return }
