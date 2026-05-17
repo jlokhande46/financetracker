@@ -58,17 +58,26 @@ iOS doesn't let third-party apps read SMS. The workaround is an Apple Shortcuts 
 
 > **Replacing the old URL-scheme shortcut?** Delete the old 4-step shortcut (Receive → URL Encode → URL → Open URL) and replace it with this single-action version.
 
-### Automation (one per bank sender)
+### Automation (one per keyword)
 
-Create one automation per bank — filtering by **Sender** is more reliable than keyword matching and catches refunds, reversals, and any future SMS format changes automatically.
+Create one automation per keyword — all calling the same "Log Bank SMS" shortcut. False positives from non-bank messages are harmless: the parser returns nil and the SMS is silently dropped.
 
+> **Why not filter by Sender?** Indian bank sender IDs contain hyphens (e.g. `JD-HDFCBK`). iOS Shortcuts strips hyphens when matching sender names, so `JD-HDFCBK` becomes `JDHDFCBK` and never matches. Keyword automations are more reliable.
+
+| Automation | Keyword | Catches |
+|---|---|---|
+| #1 | `Sent Rs` | HDFC Savings debit |
+| #2 | `credited` | HDFC Savings credit |
+| #3 | `Txn` | HDFC Tata Neu CC |
+| #4 | `Spent` | HDFC Regalia, SBI CC, ICICI CC |
+| #5 | `received INR` | Federal Bank credit |
+| #6 | `debited` | Generic fallback for other banks |
+
+For each automation:
 1. **Shortcuts → Automation → New Automation → Message**.
-2. Set **From**: enter your bank's sender ID (the name shown at the top of their SMS thread, e.g. `JD-HDFCBK`, `VM-SBICRD`, `AX-ICICIB`, `AX-FEDBNK`).
-3. Leave the "Containing" field **empty**.
-4. Set **Run**: **Immediately** (no confirmation prompt).
-5. Add action: **Run Shortcut → "Log Bank SMS"** with **Message Content** as input.
-
-Repeat for each bank sender. All automations share the same "Log Bank SMS" shortcut.
+2. Set **Containing**: enter the keyword from the table above.
+3. Set **Run**: **Immediately**.
+4. Add action: **Run Shortcut → "Log Bank SMS"** with **Message Content** as input.
 
 ### How it works
 
