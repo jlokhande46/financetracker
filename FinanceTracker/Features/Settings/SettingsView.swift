@@ -64,7 +64,6 @@ struct SettingsView: View {
         .sheet(item: $pendingImport) { payload in
             PDFImportConfirmSheet(
                 parsed: payload.parsed,
-                availableAccounts: container?.accountRepo.fetchAll() ?? [],
                 suggestedAccount: payload.suggestedAccount,
                 filename: payload.filename
             ) { chosenAccount in

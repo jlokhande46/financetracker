@@ -6,25 +6,30 @@ import SwiftUI
 /// — auto-link is a suggestion, not an authority.
 struct PDFImportConfirmSheet: View {
     let parsed: PDFParseResult
-    let availableAccounts: [AccountEntity]
     let suggestedAccount: AccountEntity?
     let filename: String
     var onConfirm: (AccountEntity?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appContainer) private var container
     @State private var selectedAccountId: UUID?
 
     init(parsed: PDFParseResult,
-         availableAccounts: [AccountEntity],
          suggestedAccount: AccountEntity?,
          filename: String,
          onConfirm: @escaping (AccountEntity?) -> Void) {
         self.parsed = parsed
-        self.availableAccounts = availableAccounts
         self.suggestedAccount = suggestedAccount
         self.filename = filename
         self.onConfirm = onConfirm
         self._selectedAccountId = State(initialValue: suggestedAccount?.id)
+    }
+
+    /// Pull fresh from the container every time the body builds. This guarantees
+    /// the picker is never empty just because accounts hadn't seeded at the
+    /// moment the sheet was constructed.
+    private var availableAccounts: [AccountEntity] {
+        container?.accountRepo.fetchAll() ?? []
     }
 
     private var selectedAccount: AccountEntity? {
@@ -174,32 +179,43 @@ struct PDFImportConfirmSheet: View {
                 .font(.micro)
                 .foregroundStyle(Color.textSecondary)
                 .padding(.top, Spacing.xs)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Spacing.sm) {
-                    ForEach(availableAccounts) { account in
-                        Button {
-                            selectedAccountId = account.id
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: account.type.icon)
-                                    .font(.system(size: 11))
-                                Text(account.name)
-                                    .font(.caption)
-                                if let l4 = account.last4 {
-                                    Text("••\(l4)")
-                                        .font(.micro)
-                                        .opacity(0.7)
+
+            if availableAccounts.isEmpty {
+                Text("No accounts found. Add one in Profile → Re-link or restart the app.")
+                    .font(.caption)
+                    .foregroundStyle(Color.warningAmber)
+                    .padding(Spacing.base)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.warningAmber.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.sm) {
+                        ForEach(availableAccounts) { account in
+                            Button {
+                                selectedAccountId = account.id
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: account.type.icon)
+                                        .font(.system(size: 11))
+                                    Text(account.name)
+                                        .font(.caption)
+                                    if let l4 = account.last4 {
+                                        Text("••\(l4)")
+                                            .font(.micro)
+                                            .opacity(0.7)
+                                    }
                                 }
+                                .foregroundStyle(selectedAccountId == account.id ? .white : Color.textSecondary)
+                                .padding(.horizontal, Spacing.md)
+                                .padding(.vertical, Spacing.sm)
+                                .background(selectedAccountId == account.id
+                                            ? Color(hex: account.colorHex)
+                                            : Color.bgCard)
+                                .clipShape(Capsule())
                             }
-                            .foregroundStyle(selectedAccountId == account.id ? .white : Color.textSecondary)
-                            .padding(.horizontal, Spacing.md)
-                            .padding(.vertical, Spacing.sm)
-                            .background(selectedAccountId == account.id
-                                        ? Color(hex: account.colorHex)
-                                        : Color.bgCard)
-                            .clipShape(Capsule())
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }

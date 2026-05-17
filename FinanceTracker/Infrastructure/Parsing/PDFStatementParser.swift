@@ -278,7 +278,94 @@ final class PDFStatementParser {
         return hasDate && hasAmount
     }
 
+    /// HDFC Credit Card row parser (Tata Neu Infinity, Regalia Gold, etc.).
+    ///
+    /// Format (each transaction on one line):
+    ///   DATE| TIME DESCRIPTION [+ REWARDS] [+] C AMOUNT [PI%]
+    ///
+    ///   "+ N"  before "C"  → reward points (a count, NOT money) → debit
+    ///   "+"    before "C"  → "+" without a rewards number → credit
+    ///   no plus            → debit (zero-reward row)
+    ///
+    /// The "C" is HDFC's literal currency marker — strip it before the amount.
+    /// Returns nil if the line doesn't match the HDFC CC format; caller falls
+    /// through to the generic parser.
+    private func parseHDFCCreditCardRow(_ line: String) -> TransactionEntity? {
+        // Group 1 = date  · 2 = time  · 3 = narration (lazy)
+        // 4 = "+" only when there's NO rewards count between it and "C" → credit
+        // 5 = amount (digits + commas + optional decimal)
+        let pattern = #"^(\d{1,2}/\d{1,2}/\d{4})\|\s*(\d{1,2}:\d{2})\s+(.+?)\s+(?:\+\s+\d+\s+)?(\+\s+)?C\s*([\d,]+(?:\.\d{1,2})?)\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              match.numberOfRanges >= 6 else { return nil }
+
+        let ns = line as NSString
+        let dateStr = ns.substring(with: match.range(at: 1))
+        let timeStr = ns.substring(with: match.range(at: 2))
+        let narration = ns.substring(with: match.range(at: 3))
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "|*:- \t"))
+        let hasPlusBeforeC = match.range(at: 4).location != NSNotFound
+        let amountStr = ns.substring(with: match.range(at: 5)).replacingOccurrences(of: ",", with: "")
+
+        let df = DateFormatter()
+        df.dateFormat = "dd/MM/yyyy HH:mm"
+        df.locale = Locale(identifier: "en_IN")
+        guard let date = df.date(from: "\(dateStr) \(timeStr)"),
+              let amount = Decimal(string: amountStr),
+              amount > 0 else { return nil }
+
+        // Filter junk lines (Finance Charges, GST, etc.) and require letters.
+        guard isValidMerchantNarration(narration) else { return nil }
+        guard !isJunkNarration(narration) else { return nil }
+
+        let type: TransactionType = hasPlusBeforeC ? .credit : .debit
+        let normalizedMerchant = normalizer.normalize(narration)
+
+        let lowerLine = line.lowercased()
+        let isCCPayment = type == .credit && (
+            lowerLine.contains("cc payment") || lowerLine.contains("bppy") ||
+            lowerLine.contains("card payment") || lowerLine.contains("payment received") ||
+            lowerLine.contains("payment thank you")
+        )
+
+        let categorySlug: String
+        let categoryConfidence: Double
+        if isCCPayment {
+            categorySlug = "cc_payment"
+            categoryConfidence = 1.0
+        } else {
+            let classification = classifier.classify(
+                merchantName: normalizedMerchant,
+                amount: amount,
+                type: type,
+                rawContent: line
+            )
+            categorySlug = classification.categorySlug
+            categoryConfidence = classification.confidence
+        }
+
+        return TransactionEntity(
+            id: UUID(),
+            amount: amount,
+            type: type,
+            merchantRaw: narration,
+            merchantName: normalizedMerchant,
+            categorySlug: categorySlug,
+            date: date,
+            source: .pdf,
+            confidence: categoryConfidence,
+            isConfirmed: categoryConfidence >= 0.85,
+            rawContent: line
+        )
+    }
+
     private func parseTransactionLine(_ line: String, bank: String?) -> TransactionEntity? {
+        // Try HDFC CC row format first — has its own dedicated structure that
+        // the generic flow would mishandle (the literal "C" currency marker and
+        // "+ N" rewards count both confuse the generic amount / direction logic).
+        if let txn = parseHDFCCreditCardRow(line) { return txn }
+
         // 1. Extract date (and consume any trailing time / value-date).
         guard let (date, dateEnd) = extractDate(in: line) else { return nil }
 
