@@ -13,6 +13,11 @@ struct FinanceTrackerApp: App {
     // MARK: - Onboarding
     @AppStorage("hasOnboarded") private var hasOnboarded: Bool = false
 
+    // MARK: - iCloud — opt-in. Requires paid Apple Developer Program + iCloud
+    // capability enabled in Xcode → Signing & Capabilities. Personal/free
+    // signing teams cannot enable CloudKit, so this stays off by default.
+    @AppStorage("iCloudSyncEnabled") private var iCloudSyncEnabled: Bool = false
+
     // MARK: - Theme — "system" | "light" | "dark"
     @AppStorage("themePreference") private var themePreference: String = "dark"
 
@@ -41,22 +46,37 @@ struct FinanceTrackerApp: App {
             GoalModel.self
         ])
 
-        // iCloud sync via CloudKit.
-        // Xcode setup (one-time): Signing & Capabilities → + Capability → iCloud
-        //   ✓ CloudKit  →  container: iCloud.com.sovinnour.FinanceTracker
-        // All @Model properties carry property-level defaults so CloudKit can
-        // synthesise records without a no-arg initialiser.
+        // iCloud is gated behind a runtime preference. To enable:
+        //   1. Paid Apple Developer Program account
+        //   2. Xcode → Target → Signing & Capabilities → + Capability → iCloud
+        //      → ✓ CloudKit → container: iCloud.com.sovinnour.FinanceTracker
+        //   3. Toggle "iCloud Sync" in app Settings
+        // If the capability isn't actually enabled in Xcode but the toggle is
+        // on, ModelContainer init will throw — we fall back to local-only.
+        let useCloud = UserDefaults.standard.bool(forKey: "iCloudSyncEnabled")
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .automatic
+            cloudKitDatabase: useCloud ? .automatic : .none
         )
 
         let container: ModelContainer
         do {
             container = try ModelContainer(for: schema, configurations: [configuration])
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            // CloudKit may have failed (capability not enabled / free signing team).
+            // Fall back to local-only so the app still launches.
+            if useCloud {
+                let local = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .none)
+                do {
+                    container = try ModelContainer(for: schema, configurations: [local])
+                    UserDefaults.standard.set(false, forKey: "iCloudSyncEnabled")
+                } catch {
+                    fatalError("Failed to create ModelContainer: \(error)")
+                }
+            } else {
+                fatalError("Failed to create ModelContainer: \(error)")
+            }
         }
 
         self.modelContainer = container

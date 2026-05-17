@@ -119,7 +119,10 @@ struct SettingsView: View {
 
     // MARK: - iCloud Sync Section
 
+    @AppStorage("iCloudSyncEnabled") private var iCloudSyncEnabled: Bool = false
+
     private var iCloudStatusText: String {
+        if !iCloudSyncEnabled { return "Off — local only" }
         switch iCloudStatus {
         case .available: return "Syncing"
         case .noAccount: return "Not signed in"
@@ -130,41 +133,54 @@ struct SettingsView: View {
     }
 
     private var iCloudStatusColor: Color {
-        iCloudStatus == .available ? Color.incomeGreen : Color.warningAmber
+        if !iCloudSyncEnabled { return Color.textTertiary }
+        return iCloudStatus == .available ? Color.incomeGreen : Color.warningAmber
     }
 
     private var iCloudSection: some View {
         SettingsSectionCard(title: "iCloud Sync") {
-            HStack {
-                HStack(spacing: Spacing.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: Radius.sm)
-                            .fill(Color.brandPrimary)
-                            .frame(width: 32, height: 32)
-                        Image(systemName: "icloud.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.white)
+            VStack(spacing: 0) {
+                HStack {
+                    HStack(spacing: Spacing.md) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: Radius.sm)
+                                .fill(Color.brandPrimary)
+                                .frame(width: 32, height: 32)
+                            Image(systemName: "icloud.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sync Across Devices")
+                                .font(.bodyMedium)
+                                .foregroundColor(.textPrimary)
+                            Text("Requires paid Apple Developer account + CloudKit capability enabled in Xcode. Toggle then restart the app.")
+                                .font(.caption)
+                                .foregroundColor(.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sync Across Devices")
-                            .font(.bodyMedium)
-                            .foregroundColor(.textPrimary)
-                        Text("Your data stays in sync on all your Apple devices")
+                    Spacer()
+                    Toggle("", isOn: $iCloudSyncEnabled)
+                        .labelsHidden()
+                        .tint(Color.brandPrimary)
+                }
+                .padding(Spacing.base)
+
+                if iCloudSyncEnabled {
+                    Divider().background(Color.bgElevated)
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(iCloudStatusColor)
+                            .frame(width: 8, height: 8)
+                        Text(iCloudStatusText)
                             .font(.caption)
                             .foregroundColor(.textSecondary)
+                        Spacer()
                     }
-                }
-                Spacer()
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(iCloudStatusColor)
-                        .frame(width: 8, height: 8)
-                    Text(iCloudStatusText)
-                        .font(.caption)
-                        .foregroundColor(.textSecondary)
+                    .padding(Spacing.base)
                 }
             }
-            .padding(Spacing.base)
         }
     }
 
