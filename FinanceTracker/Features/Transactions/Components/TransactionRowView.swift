@@ -134,9 +134,25 @@ struct TransactionRowView: View {
                         }
                     }
 
-                    Text(category.name)
-                        .font(.caption)
-                        .foregroundStyle(Color.textSecondary)
+                    HStack(spacing: 6) {
+                        Text(category.name)
+                            .font(.caption)
+                            .foregroundStyle(Color.textSecondary)
+                        ForEach(transaction.tags.prefix(2), id: \.self) { tag in
+                            Text("#\(tag)")
+                                .font(.micro)
+                                .foregroundStyle(Color.brandPrimary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Color.brandPrimary.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                        if transaction.tags.count > 2 {
+                            Text("+\(transaction.tags.count - 2)")
+                                .font(.micro)
+                                .foregroundStyle(Color.textTertiary)
+                        }
+                    }
 
                     HStack(spacing: Spacing.xs) {
                         SourceBadge(source: transaction.source)

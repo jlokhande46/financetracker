@@ -29,6 +29,9 @@ final class TransactionListViewModel {
     var selectedType: TransactionType? = nil {
         didSet { applyFilters() }
     }
+    var selectedTags: Set<String> = [] {
+        didSet { applyFilters() }
+    }
     var sortOrder: SortOrder = .dateDesc {
         didSet { applyFilters() }
     }
@@ -40,7 +43,14 @@ final class TransactionListViewModel {
     var bulkUpdateMessage: String? = nil
 
     var hasActiveFilters: Bool {
-        selectedCategory != nil || selectedSource != nil || selectedType != nil
+        selectedCategory != nil || selectedSource != nil || selectedType != nil || !selectedTags.isEmpty
+    }
+
+    /// Every tag ever used across transactions (sorted) — feeds the filter sheet.
+    var allKnownTags: [String] {
+        var set = Set<String>()
+        for t in allTransactions { for tag in t.tags { set.insert(tag) } }
+        return Array(set).sorted()
     }
 
     // MARK: - Dependencies
@@ -103,6 +113,13 @@ final class TransactionListViewModel {
         // Type
         if let type = selectedType {
             result = result.filter { $0.type == type }
+        }
+
+        // Tags — match if transaction has any of the selected tags
+        if !selectedTags.isEmpty {
+            result = result.filter { txn in
+                !Set(txn.tags).intersection(selectedTags).isEmpty
+            }
         }
 
         // Sort
@@ -263,6 +280,7 @@ final class TransactionListViewModel {
         selectedCategory = nil
         selectedSource = nil
         selectedType = nil
+        selectedTags = []
     }
 
     func refresh() {

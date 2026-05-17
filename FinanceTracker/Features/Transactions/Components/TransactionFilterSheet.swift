@@ -11,12 +11,15 @@ struct TransactionFilterSheet: View {
     @Binding var selectedType: TransactionType?
     @Binding var selectedCategory: String?
     @Binding var selectedSource: TransactionSource?
+    @Binding var selectedTags: Set<String>
 
+    let availableTags: [String]
     var onApply: () -> Void
 
     @State private var localType: TransactionType? = nil
     @State private var localCategory: String? = nil
     @State private var localSource: TransactionSource? = nil
+    @State private var localTags: Set<String> = []
     @State private var selectedDateRange: DateRangePreset = .thisMonth
     @State private var minAmount: Double = 0
     @State private var maxAmount: Double = 100_000
@@ -28,6 +31,7 @@ struct TransactionFilterSheet: View {
         if localType != nil { count += 1 }
         if localCategory != nil { count += 1 }
         if localSource != nil { count += 1 }
+        if !localTags.isEmpty { count += 1 }
         if selectedDateRange != .thisMonth { count += 1 }
         return count
     }
@@ -124,6 +128,28 @@ struct TransactionFilterSheet: View {
                             }
                         }
 
+                        // Tags Section
+                        if !availableTags.isEmpty {
+                            FilterSection(title: "Tags") {
+                                FlowLayout(spacing: Spacing.sm) {
+                                    ForEach(availableTags, id: \.self) { tag in
+                                        TagFilterPill(
+                                            label: tag,
+                                            isSelected: localTags.contains(tag)
+                                        ) {
+                                            withAnimation(.springy) {
+                                                if localTags.contains(tag) {
+                                                    localTags.remove(tag)
+                                                } else {
+                                                    localTags.insert(tag)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         Spacer(minLength: Spacing.xxl)
                     }
                     .padding(.horizontal, Spacing.base)
@@ -138,6 +164,7 @@ struct TransactionFilterSheet: View {
                         selectedType = localType
                         selectedCategory = localCategory
                         selectedSource = localSource
+                        selectedTags = localTags
                         onApply()
                         dismiss()
                     } label: {
@@ -182,6 +209,7 @@ struct TransactionFilterSheet: View {
                             localType = nil
                             localCategory = nil
                             localSource = nil
+                            localTags = []
                             selectedDateRange = .thisMonth
                             minAmount = 0
                             maxAmount = 100_000
@@ -195,6 +223,7 @@ struct TransactionFilterSheet: View {
                 localType = selectedType
                 localCategory = selectedCategory
                 localSource = selectedSource
+                localTags = selectedTags
             }
         }
     }
@@ -279,6 +308,29 @@ private struct DateRangePill: View {
 }
 
 // MARK: - Category Filter Chip
+private struct TagFilterPill: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "tag")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(label)
+                    .font(.caption)
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.brandPrimary)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color.brandPrimary : Color.brandPrimary.opacity(0.15))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct CategoryFilterChip: View {
     let category: CategoryEntity
     let isSelected: Bool
@@ -394,6 +446,8 @@ private struct FlowLayout: Layout {
         selectedType: .constant(nil),
         selectedCategory: .constant(nil),
         selectedSource: .constant(nil),
+        selectedTags: .constant([]),
+        availableTags: ["work", "lunch", "vacation"],
         onApply: {}
     )
 }

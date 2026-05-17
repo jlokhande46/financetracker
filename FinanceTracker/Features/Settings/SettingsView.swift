@@ -19,6 +19,16 @@ struct SettingsView: View {
     @State private var toastMessage: String = ""
     @State private var showToast: Bool = false
     @State private var toastType: ToastType = .success
+    @State private var pendingImport: PDFImportPayload? = nil
+
+    /// Held in @State between parse and user confirmation. Carries the parsed
+    /// result + the suggested account so the sheet can pre-fill.
+    struct PDFImportPayload: Identifiable {
+        let id = UUID()
+        let parsed: PDFParseResult
+        let suggestedAccount: AccountEntity?
+        let filename: String
+    }
 
     var body: some View {
         NavigationStack {
@@ -50,6 +60,19 @@ struct SettingsView: View {
             allowsMultipleSelection: false
         ) { result in
             handlePDFImport(result: result)
+        }
+        .sheet(item: $pendingImport) { payload in
+            PDFImportConfirmSheet(
+                parsed: payload.parsed,
+                availableAccounts: container?.accountRepo.fetchAll() ?? [],
+                suggestedAccount: payload.suggestedAccount,
+                filename: payload.filename
+            ) { chosenAccount in
+                performImport(parsed: payload.parsed, account: chosenAccount)
+                pendingImport = nil
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .alert("Clear All Data", isPresented: $showClearDataAlert) {
             Button("Cancel", role: .cancel) {}
@@ -363,80 +386,90 @@ struct SettingsView: View {
                     return
                 }
 
-                // Match account by last4, then by product name in filename, then bank fallback.
-                let accounts = container.accountRepo.fetchAll()
-                let filenameLower = url.lastPathComponent.lowercased()
-                let productHints: [(needle: String, last4: String)] = [
-                    ("tataneu",  "6624"), ("tata neu",  "6624"), ("tata_neu",  "6624"),
-                    ("regalia",  "4493"),
-                    ("sapphiro", "2000"), ("saphirro", "2000"), ("saphiro", "2000"),
-                    ("cashback", "5075"), ("sbicashback", "5075"),
-                    ("federal",  "8708"), ("fideral", "8708"),
-                ]
-                let filenameMatchedLast4 = productHints.first(where: { filenameLower.contains($0.needle) })?.last4
-
-                // Match account in this order:
-                //   1. last4 extracted from PDF text exactly matches an account
-                //   2. filename hint (productHints) maps to a known last4
-                //   3. detected bank + credit type, but ONLY if the user has
-                //      exactly one credit card from that bank (avoids picking
-                //      the wrong card when the user has multiple HDFC cards)
-                //   4. detected bank with any type
-                let bankLower = parsed.detectedBank?.lowercased() ?? ""
-                let bankMatches = bankLower.isEmpty
-                    ? []
-                    : accounts.filter { $0.bankName.lowercased().contains(bankLower) }
-                let creditBankMatches = bankMatches.filter { $0.type == .credit }
-
-                let matchedAccount = parsed.accountLast4.flatMap { l4 in accounts.first { $0.last4 == l4 } }
-                                  ?? filenameMatchedLast4.flatMap { l4 in accounts.first { $0.last4 == l4 } }
-                                  ?? (creditBankMatches.count == 1 ? creditBankMatches.first : nil)
-                                  ?? (bankMatches.count == 1 ? bankMatches.first : nil)
-
-                // Save transactions with accountId set so they show the card chip
-                if !parsed.transactions.isEmpty {
-                    let linked = parsed.transactions.map { txn -> TransactionEntity in
-                        var copy = txn
-                        copy.accountId = matchedAccount?.id
-                        return copy
-                    }
-                    container.transactionRepo.saveBulk(linked)
-                }
-
-                // Save credit-card due date if found
-                var statementSaved = false
-                if let dueDate = parsed.dueDate, let totalDue = parsed.totalDue, totalDue > 0 {
-                    let account = matchedAccount ?? accounts.first { $0.type == .credit && $0.bankName.lowercased().contains(parsed.detectedBank?.lowercased() ?? "") }
-                    if let account {
-                        let stmt = CardStatementEntity(
-                            accountId: account.id,
-                            accountName: account.name,
-                            accountLast4: account.last4,
-                            accountColorHex: account.colorHex,
-                            statementDate: parsed.statementDate,
-                            dueDate: dueDate,
-                            totalDue: totalDue,
-                            minimumDue: parsed.minimumDue
-                        )
-                        container.cardStatementRepo.save(stmt)
-                        NotificationManager.shared.scheduleReminders(for: stmt)
-                        statementSaved = true
-                    }
-                }
-
-                let bankSuffix = parsed.detectedBank.map { " from \($0)" } ?? ""
-                if parsed.transactions.isEmpty && statementSaved {
-                    showSuccessToast("Statement saved — due date reminder set\(bankSuffix)")
-                } else if parsed.transactions.isEmpty {
-                    showErrorToast("No transactions detected in this PDF.")
-                } else if statementSaved {
-                    showSuccessToast("Imported \(parsed.transactions.count) transactions\(bankSuffix) · Due date saved")
-                } else {
-                    showSuccessToast("Imported \(parsed.transactions.count) transactions\(bankSuffix)")
-                }
+                // Suggest an account using the same hierarchy as before — but DON'T
+                // save yet. Let the user confirm / override in the sheet.
+                let suggested = suggestAccount(for: parsed, filename: url.lastPathComponent, accounts: container.accountRepo.fetchAll())
+                pendingImport = PDFImportPayload(
+                    parsed: parsed,
+                    suggestedAccount: suggested,
+                    filename: url.lastPathComponent
+                )
+                return
             }
         case .failure(let error):
             showErrorToast("Import failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Auto-link suggestion. Order: parsed last4 → filename hint → single CC
+    /// from detected bank → single account from detected bank.
+    private func suggestAccount(for parsed: PDFParseResult, filename: String, accounts: [AccountEntity]) -> AccountEntity? {
+        let lower = filename.lowercased()
+        let hints: [(String, String)] = [
+            ("tataneu", "6624"), ("tata neu", "6624"), ("tata_neu", "6624"),
+            ("regalia", "4493"),
+            ("sapphiro", "2000"), ("saphirro", "2000"), ("saphiro", "2000"),
+            ("cashback", "5075"), ("sbicashback", "5075"),
+            ("federal", "8708"), ("fideral", "8708"),
+        ]
+        let filenameLast4 = hints.first(where: { lower.contains($0.0) })?.1
+        let bankLower = parsed.detectedBank?.lowercased() ?? ""
+        let bankMatches = bankLower.isEmpty ? [] : accounts.filter { $0.bankName.lowercased().contains(bankLower) }
+        let creditBankMatches = bankMatches.filter { $0.type == .credit }
+
+        return parsed.accountLast4.flatMap { l4 in accounts.first { $0.last4 == l4 } }
+            ?? filenameLast4.flatMap { l4 in accounts.first { $0.last4 == l4 } }
+            ?? (creditBankMatches.count == 1 ? creditBankMatches.first : nil)
+            ?? (bankMatches.count == 1 ? bankMatches.first : nil)
+    }
+
+    /// Called from PDFImportConfirmSheet when the user taps Import. By that
+    /// point an account has always been chosen (or explicitly skipped).
+    private func performImport(parsed: PDFParseResult, account: AccountEntity?) {
+        guard let container else {
+            showErrorToast("App not ready — please try again.")
+            return
+        }
+
+        // Save transactions with accountId set so they show the card chip
+        if !parsed.transactions.isEmpty {
+            let linked = parsed.transactions.map { txn -> TransactionEntity in
+                var copy = txn
+                copy.accountId = account?.id
+                return copy
+            }
+            container.transactionRepo.saveBulk(linked)
+        }
+
+        // Save credit-card due date if found
+        var statementSaved = false
+        if let dueDate = parsed.dueDate, let totalDue = parsed.totalDue, totalDue > 0 {
+            if let account {
+                let stmt = CardStatementEntity(
+                    accountId: account.id,
+                    accountName: account.name,
+                    accountLast4: account.last4,
+                    accountColorHex: account.colorHex,
+                    statementDate: parsed.statementDate,
+                    dueDate: dueDate,
+                    totalDue: totalDue,
+                    minimumDue: parsed.minimumDue
+                )
+                container.cardStatementRepo.save(stmt)
+                NotificationManager.shared.scheduleReminders(for: stmt)
+                statementSaved = true
+            }
+        }
+
+        let bankSuffix = parsed.detectedBank.map { " from \($0)" } ?? ""
+        if parsed.transactions.isEmpty && statementSaved {
+            showSuccessToast("Statement saved — due date reminder set\(bankSuffix)")
+        } else if parsed.transactions.isEmpty {
+            showErrorToast("No transactions detected in this PDF.")
+        } else if statementSaved {
+            showSuccessToast("Imported \(parsed.transactions.count) transactions\(bankSuffix) · Due date saved")
+        } else {
+            showSuccessToast("Imported \(parsed.transactions.count) transactions\(bankSuffix)")
         }
     }
 

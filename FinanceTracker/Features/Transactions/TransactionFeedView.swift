@@ -113,6 +113,8 @@ struct TransactionFeedView: View {
                     selectedType: $viewModel.selectedType,
                     selectedCategory: $viewModel.selectedCategory,
                     selectedSource: $viewModel.selectedSource,
+                    selectedTags: $viewModel.selectedTags,
+                    availableTags: viewModel.allKnownTags,
                     onApply: { viewModel.applyFilters() }
                 )
                 .presentationDetents([.large])
@@ -320,6 +322,9 @@ struct TransactionFeedView: View {
         }
         if let source = viewModel.selectedSource {
             parts.append(source.displayName)
+        }
+        if !viewModel.selectedTags.isEmpty {
+            parts.append("#" + viewModel.selectedTags.sorted().joined(separator: ", #"))
         }
         return "Filtering by: \(parts.joined(separator: ", "))"
     }
