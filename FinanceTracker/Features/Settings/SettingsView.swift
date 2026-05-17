@@ -375,10 +375,23 @@ struct SettingsView: View {
                 ]
                 let filenameMatchedLast4 = productHints.first(where: { filenameLower.contains($0.needle) })?.last4
 
+                // Match account in this order:
+                //   1. last4 extracted from PDF text exactly matches an account
+                //   2. filename hint (productHints) maps to a known last4
+                //   3. detected bank + credit type, but ONLY if the user has
+                //      exactly one credit card from that bank (avoids picking
+                //      the wrong card when the user has multiple HDFC cards)
+                //   4. detected bank with any type
+                let bankLower = parsed.detectedBank?.lowercased() ?? ""
+                let bankMatches = bankLower.isEmpty
+                    ? []
+                    : accounts.filter { $0.bankName.lowercased().contains(bankLower) }
+                let creditBankMatches = bankMatches.filter { $0.type == .credit }
+
                 let matchedAccount = parsed.accountLast4.flatMap { l4 in accounts.first { $0.last4 == l4 } }
                                   ?? filenameMatchedLast4.flatMap { l4 in accounts.first { $0.last4 == l4 } }
-                                  ?? accounts.first { $0.bankName.lowercased().contains(parsed.detectedBank?.lowercased() ?? "") && $0.type == .credit }
-                                  ?? accounts.first { $0.bankName.lowercased().contains(parsed.detectedBank?.lowercased() ?? "") }
+                                  ?? (creditBankMatches.count == 1 ? creditBankMatches.first : nil)
+                                  ?? (bankMatches.count == 1 ? bankMatches.first : nil)
 
                 // Save transactions with accountId set so they show the card chip
                 if !parsed.transactions.isEmpty {

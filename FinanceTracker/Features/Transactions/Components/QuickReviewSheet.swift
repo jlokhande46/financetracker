@@ -362,14 +362,19 @@ struct QuickReviewSheet: View {
                 .font(.bodyMedium)
                 .foregroundStyle(Color.textSecondary)
             Spacer()
-            Button("Done") { dismiss() }
-                .font(.titleMedium)
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(Color.brandPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.full))
-                .padding(.horizontal, Spacing.base)
-                .buttonStyle(.plain)
+            // Style INSIDE the button's label, otherwise the .background/.frame
+            // attaches to a non-tappable wrapper around a tiny "Done" text and
+            // only the text fires dismiss.
+            Button { dismiss() } label: {
+                Text("Done")
+                    .font(.titleMedium)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Color.brandPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.full))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, Spacing.base)
         }
         .padding(Spacing.base)
     }

@@ -273,7 +273,7 @@ final class PDFStatementParser {
     private func looksLikeTransactionLine(_ line: String) -> Bool {
         let hasDate = line.range(of: #"\d{1,2}[/\-][A-Za-z0-9]{2,9}[/\-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}"#,
                                   options: .regularExpression) != nil
-        let hasAmount = line.range(of: #"(?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d+\.\d{2})|(?:\d{4,})"#,
+        let hasAmount = line.range(of: #"(?:\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?)|(?:\d+\.\d{2})|(?:\d{4,})"#,
                                     options: .regularExpression) != nil
         return hasDate && hasAmount
     }
@@ -525,12 +525,15 @@ final class PDFStatementParser {
         let prefix = #"(?<![A-Za-z0-9.])"#
         let suffix = #"(?![A-Za-z0-9./-])"#
         let body: String
+        // (a) Indian comma-grouped: 1,234 / 1,23,456 / 1,23,45,678.50
+        //     Comma only — NEVER space — otherwise "14 747.50" (reward-points + amount)
+        //     gets misread as a single ₹14,747.50.
+        // (b) decimal-only: 100.00
+        // (c) plain 1-7 digit whole numbers (only when caller has stripped dates).
         if allowWholeNumbers {
-            // (a) comma-separated, (b) decimal-only, (c) plain 1-7 digit whole numbers.
-            // Whole numbers only safe AFTER the caller has stripped dates.
-            body = #"(?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,7}\.\d{1,2})|(?:\d{1,7})"#
+            body = #"(?:\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?)|(?:\d{1,7}\.\d{1,2})|(?:\d{1,7})"#
         } else {
-            body = #"(?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2})"#
+            body = #"(?:\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2})"#
         }
         let pattern = "\(prefix)(\(body))\(suffix)\\s*(Cr|Dr|CR|DR)?"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
