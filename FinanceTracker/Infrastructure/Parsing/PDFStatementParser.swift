@@ -43,14 +43,31 @@ final class PDFStatementParser {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
+        // Group lines into multi-line "records". Many bank statements (Federal,
+        // ICICI Sapphiro, etc.) wrap a single transaction across 2-3 lines:
+        //   line A: date narration-start
+        //   line B: narration-continued
+        //   line C: amount Cr
+        // A new record starts at the next line that begins with a date. We
+        // concatenate continuation lines onto the current record so the parser
+        // sees the date AND the amount in the same string.
+        let records = groupLinesIntoRecords(lines)
+
+        // HDFC-Savings detection: PDFKit reads the tabular layout column-first,
+        // so dates / narrations / amounts end up scrambled into separate sections.
+        // If the median record has > 3 dates with no amount, skip transaction parsing.
+        let isScrambledColumns = recordsAppearColumnScrambled(records)
+
         var transactions: [TransactionEntity] = []
         var unparsed = 0
 
-        for line in lines {
-            if let txn = parseTransactionLine(line, bank: bank) {
-                transactions.append(txn)
-            } else if looksLikeTransactionLine(line) {
-                unparsed += 1
+        if !isScrambledColumns {
+            for record in records {
+                if let txn = parseTransactionLine(record, bank: bank) {
+                    transactions.append(txn)
+                } else if looksLikeTransactionLine(record) {
+                    unparsed += 1
+                }
             }
         }
 
@@ -260,15 +277,29 @@ final class PDFStatementParser {
     }
 
     private func parseTransactionLine(_ line: String, bank: String?) -> TransactionEntity? {
-        // Extract date
+        // 1. Extract date (and consume any trailing time / value-date).
         guard let (date, dateEnd) = extractDate(in: line) else { return nil }
 
-        // Extract amounts (last two decimal-bearing numbers are usually amount + balance)
-        let amounts = extractAmounts(in: line)
-        guard !amounts.isEmpty else { return nil }
-
-        // The narration sits between the date and the first amount
+        // 2. Look for amounts ONLY in the post-date portion of the line. This
+        //    lets us safely accept whole-number amounts (Federal Bank: "0 25000
+        //    90672.62") without picking the year out of the leading date as an
+        //    amount.
         let lineNS = line as NSString
+        guard dateEnd < lineNS.length else { return nil }
+        let postDate = lineNS.substring(from: dateEnd)
+        let amountsInPostDate = extractAmounts(in: postDate, allowWholeNumbers: true)
+        guard !amountsInPostDate.isEmpty else { return nil }
+
+        // Shift each match's range back to absolute coordinates in `line`.
+        let amounts = amountsInPostDate.map { m in
+            AmountMatch(
+                value: m.value,
+                range: NSRange(location: m.range.location + dateEnd, length: m.range.length),
+                hasCRSuffix: m.hasCRSuffix,
+                hasDRSuffix: m.hasDRSuffix
+            )
+        }
+
         let amountStart = amounts.first!.range.location
         guard dateEnd < amountStart else { return nil }
 
@@ -338,6 +369,57 @@ final class PDFStatementParser {
         let nsRange: NSRange
     }
 
+    // MARK: - Multi-line record grouping
+
+    /// A "record" is a transaction's text — possibly spanning multiple PDFKit
+    /// output lines. A new record begins at any line that starts with a date.
+    private func groupLinesIntoRecords(_ lines: [String]) -> [String] {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"^\d{1,2}[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}\b"#
+        ) else { return lines }
+
+        var records: [String] = []
+        var current = ""
+        for line in lines {
+            let isRecordStart = regex.firstMatch(
+                in: line,
+                range: NSRange(line.startIndex..., in: line)
+            ) != nil
+            if isRecordStart {
+                if !current.isEmpty { records.append(current) }
+                current = line
+            } else if !current.isEmpty {
+                // Continuation — join with space so date and amount end up in one string.
+                current += " " + line
+            }
+        }
+        if !current.isEmpty { records.append(current) }
+        return records
+    }
+
+    /// If the bulk of "records" each contain three-plus dates packed in front
+    /// with no amount on the same record, PDFKit has read the table column-
+    /// first (HDFC Savings symptom). We can't recover from this without
+    /// coordinate-aware extraction; bail rather than emit garbage rows.
+    private func recordsAppearColumnScrambled(_ records: [String]) -> Bool {
+        let dateRegex = try? NSRegularExpression(pattern: #"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"#)
+        let amountRegex = try? NSRegularExpression(pattern: #"\d{1,3}(?:[,\s]\d{3})*\.\d{2}"#)
+        var scrambledCount = 0
+        var candidateCount = 0
+        for record in records.prefix(20) where record.count > 40 {
+            candidateCount += 1
+            let range = NSRange(record.startIndex..., in: record)
+            let dateCount = dateRegex?.numberOfMatches(in: record, range: range) ?? 0
+            let amountCount = amountRegex?.numberOfMatches(in: record, range: range) ?? 0
+            if dateCount >= 4 && amountCount == 0 { scrambledCount += 1 }
+        }
+        // Need at least 3 jumbled records to be confident — single-tx PDFs
+        // shouldn't trip this.
+        return scrambledCount >= 3 && scrambledCount * 2 >= candidateCount
+    }
+
+    // MARK: - Date extraction
+
     private func extractDate(in line: String) -> (Date, Int)? {
         let patterns: [(String, [String])] = [
             (#"\d{2}[/-]\d{2}[/-]\d{4}"#,          ["dd/MM/yyyy", "dd-MM-yyyy"]),
@@ -361,12 +443,22 @@ final class PDFStatementParser {
                 df.dateFormat = format
                 if let date = df.date(from: matchedString) {
                     var end = NSMaxRange(match.range)
-                    // Consume an optional time "HH:MM" or "HH:MM:SS" trailing the date
+                    // 1. Trailing time "HH:MM" or "HH:MM:SS" (HDFC CC format)
                     if end < lineNS.length {
                         let tail = lineNS.substring(from: end)
                         if let timeRegex = try? NSRegularExpression(pattern: #"^[\s|]*\d{1,2}:\d{2}(?::\d{2})?"#),
                            let timeMatch = timeRegex.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) {
                             end += timeMatch.range.length
+                        }
+                    }
+                    // 2. Trailing "value date" — Federal Bank statements show
+                    //    "<txn-date> <value-date> <narration>..."
+                    if end < lineNS.length {
+                        let tail = lineNS.substring(from: end)
+                        if let dateRegex = try? NSRegularExpression(
+                            pattern: #"^\s*\d{1,2}[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}\b"#
+                        ), let m2 = dateRegex.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)) {
+                            end += m2.range.length
                         }
                     }
                     return (date, end)
@@ -419,14 +511,21 @@ final class PDFStatementParser {
         let hasDRSuffix: Bool
     }
 
-    private func extractAmounts(in line: String) -> [AmountMatch] {
-        // Match amounts only when they're clearly amounts:
-        //   (a) comma-separated numbers with optional decimal: 1,000 or 1,000.00
-        //   (b) decimal-only numbers: 100.00, 100.5
-        // We deliberately do NOT match bare 4-digit integers because that would gobble
-        // years out of dates (e.g. "07/05/2026" → 2026), breaking the date-before-amount
-        // guard in parseTransactionLine and silently dropping every row.
-        let pattern = #"((?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2}))\s*(Cr|Dr|CR|DR)?"#
+    private func extractAmounts(in line: String, allowWholeNumbers: Bool = false) -> [AmountMatch] {
+        // Lookbehind / lookahead enforce that the number is a standalone token —
+        // not the prefix or suffix of a longer alphanumeric sequence. Without these
+        // we'd match the "8" inside "laadesh8" or "5818915" inside "S95818915".
+        let prefix = #"(?<![A-Za-z0-9.])"#
+        let suffix = #"(?![A-Za-z0-9./-])"#
+        let body: String
+        if allowWholeNumbers {
+            // (a) comma-separated, (b) decimal-only, (c) plain 1-7 digit whole numbers.
+            // Whole numbers only safe AFTER the caller has stripped dates.
+            body = #"(?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,7}\.\d{1,2})|(?:\d{1,7})"#
+        } else {
+            body = #"(?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2})"#
+        }
+        let pattern = "\(prefix)(\(body))\(suffix)\\s*(Cr|Dr|CR|DR)?"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
 
         let range = NSRange(line.startIndex..., in: line)
@@ -460,12 +559,18 @@ final class PDFStatementParser {
     }
 
     private func inferAmountAndType(amounts: [AmountMatch], line: String) -> InferenceResult {
-        // 1. ICICI CC — explicit Cr/Dr suffix on the amount (regex-bound, very reliable)
-        if let cr = amounts.first(where: { $0.hasCRSuffix }) {
-            return InferenceResult(amount: cr.value, type: .credit, directionConfidence: 1.0)
-        }
-        if let dr = amounts.first(where: { $0.hasDRSuffix }) {
-            return InferenceResult(amount: dr.value, type: .debit, directionConfidence: 1.0)
+        // 1. Explicit Cr/Dr suffix on the amount — most reliable, BUT only trust it
+        //    when there are ≤3 amounts on the row. Federal-style savings statements
+        //    show 4 amounts per row (withdrawal, deposit, balance, with CR on the
+        //    balance) — there the CR refers to balance state, not transaction
+        //    direction. Column detection in step 4 handles that case correctly.
+        if amounts.count <= 3 {
+            if let cr = amounts.first(where: { $0.hasCRSuffix }) {
+                return InferenceResult(amount: cr.value, type: .credit, directionConfidence: 1.0)
+            }
+            if let dr = amounts.first(where: { $0.hasDRSuffix }) {
+                return InferenceResult(amount: dr.value, type: .debit, directionConfidence: 1.0)
+            }
         }
 
         // 2. SBI CC — last non-space char on the row is 'C' (credit) or 'D' (debit)
