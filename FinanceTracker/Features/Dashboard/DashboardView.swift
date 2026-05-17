@@ -36,11 +36,12 @@ struct DashboardView: View {
             .sheet(isPresented: $showQuickReview) {
                 QuickReviewSheet(
                     transactions: viewModel.pendingReviewTransactions,
-                    onConfirm: { txn, newName, newSlug, rememberName, rememberCategory, applyToPast in
+                    onConfirm: { txn, newName, newSlug, newTags, rememberName, rememberCategory, applyToPast in
                         viewModel.confirmReview(
                             transaction: txn,
                             newName: newName,
                             newSlug: newSlug,
+                            newTags: newTags,
                             rememberName: rememberName,
                             rememberCategory: rememberCategory,
                             applyToPast: applyToPast

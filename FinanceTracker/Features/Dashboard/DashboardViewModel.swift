@@ -42,10 +42,11 @@ final class DashboardViewModel {
         upcomingStatements.removeAll { $0.id == id }
     }
 
-    func confirmReview(transaction: TransactionEntity, newName: String?, newSlug: String, rememberName: Bool, rememberCategory: Bool, applyToPast: Bool = false) {
+    func confirmReview(transaction: TransactionEntity, newName: String?, newSlug: String, newTags: [String]? = nil, rememberName: Bool, rememberCategory: Bool, applyToPast: Bool = false) {
         var updated = transaction
         if let n = newName, !n.isEmpty { updated.merchantName = n }
         updated.categorySlug = newSlug
+        if let newTags { updated.tags = newTags }
         updated.isConfirmed = true
         updated.confidence = 1.0
         transactionRepo.update(updated)

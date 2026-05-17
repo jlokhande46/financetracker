@@ -190,6 +190,7 @@ final class TransactionListViewModel {
         transaction: TransactionEntity,
         newName: String?,
         newSlug: String,
+        newTags: [String]? = nil,
         rememberName: Bool,
         rememberCategory: Bool,
         applyToPast: Bool = false
@@ -199,6 +200,7 @@ final class TransactionListViewModel {
             updated.merchantName = n
         }
         updated.categorySlug = newSlug
+        if let newTags { updated.tags = newTags }
         updated.isConfirmed = true
         updated.confidence = 1.0
         transactionRepo.update(updated)

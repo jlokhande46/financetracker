@@ -1,24 +1,45 @@
 import SwiftUI
 
 struct QuickReviewSheet: View {
-    /// (transaction, newName, newCategorySlug, rememberName, rememberCategory, applyToPast)
-    var onConfirm: (TransactionEntity, String, String, Bool, Bool, Bool) -> Void
+    /// (transaction, newName, newCategorySlug, newTags, rememberName, rememberCategory, applyToPast)
+    var onConfirm: (TransactionEntity, String, String, [String], Bool, Bool, Bool) -> Void
     var onSkip: (TransactionEntity) -> Void
     var onDelete: (TransactionEntity) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appContainer) private var container
     @State private var snapshot: [TransactionEntity]
     @State private var index: Int = 0
     @State private var editName: String = ""
     @State private var selectedSlug: String = "others"
+    @State private var editTags: [String] = []
+    @State private var tagDraft: String = ""
     @State private var rememberName: Bool = true
     @State private var rememberCategory: Bool = true
     @State private var applyToPast: Bool = true
     @FocusState private var nameFieldFocused: Bool
+    @FocusState private var tagFieldFocused: Bool
+
+    /// Every tag ever used — feeds autocomplete suggestions.
+    private var allKnownTags: [String] {
+        guard let container else { return [] }
+        var set = Set<String>()
+        for t in container.transactionRepo.fetchAll() {
+            for tag in t.tags { set.insert(tag) }
+        }
+        return Array(set).sorted()
+    }
+
+    private var tagSuggestions: [String] {
+        let draft = tagDraft.trimmingCharacters(in: .whitespaces).lowercased()
+        let pool = allKnownTags.filter { !editTags.contains($0) }
+        if draft.isEmpty { return Array(pool.prefix(8)) }
+        return pool.filter { $0.lowercased().contains(draft) }.prefix(8).map { $0 }
+    }
 
     init(
         transactions: [TransactionEntity],
-        onConfirm: @escaping (TransactionEntity, String, String, Bool, Bool, Bool) -> Void,
+        onConfirm: @escaping (TransactionEntity, String, String, [String], Bool, Bool, Bool) -> Void,
         onSkip: @escaping (TransactionEntity) -> Void,
         onDelete: @escaping (TransactionEntity) -> Void
     ) {
@@ -177,10 +198,101 @@ struct QuickReviewSheet: View {
             }
 
             categoryGrid
+            tagEditor
         }
         .padding(Spacing.base)
         .background(Color.bgCard)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: - Tag editor
+
+    private var tagEditor: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("TAGS")
+                .font(.micro)
+                .foregroundStyle(Color.textSecondary)
+
+            if !editTags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.xs) {
+                        ForEach(editTags, id: \.self) { tag in
+                            HStack(spacing: 4) {
+                                Text("#\(tag)")
+                                    .font(.micro)
+                                    .foregroundStyle(Color.brandPrimary)
+                                Button {
+                                    editTags.removeAll { $0 == tag }
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(Color.brandPrimary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, 4)
+                            .background(Color.brandPrimary.opacity(0.15))
+                            .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: Spacing.xs) {
+                TextField("Add a tag…", text: $tagDraft)
+                    .font(.bodyMedium)
+                    .foregroundStyle(Color.textPrimary)
+                    .tint(Color.brandPrimary)
+                    .focused($tagFieldFocused)
+                    .submitLabel(.done)
+                    .onSubmit { commitTagDraft() }
+                    .padding(.horizontal, Spacing.md)
+                    .padding(.vertical, Spacing.sm)
+                    .background(Color.bgElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                if !tagDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Button("Add", action: commitTagDraft)
+                        .font(.caption)
+                        .foregroundStyle(Color.brandPrimary)
+                }
+            }
+
+            if !tagSuggestions.isEmpty && (tagFieldFocused || !tagDraft.isEmpty) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.xs) {
+                        ForEach(tagSuggestions, id: \.self) { suggestion in
+                            Button {
+                                addTag(suggestion)
+                            } label: {
+                                Text("+ \(suggestion)")
+                                    .font(.micro)
+                                    .foregroundStyle(Color.textSecondary)
+                                    .padding(.horizontal, Spacing.sm)
+                                    .padding(.vertical, 4)
+                                    .background(Color.bgElevated)
+                                    .overlay(Capsule().stroke(Color.textTertiary.opacity(0.3), lineWidth: 0.5))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func commitTagDraft() {
+        let cleaned = tagDraft.trimmingCharacters(in: .whitespaces)
+        guard !cleaned.isEmpty else { return }
+        addTag(cleaned)
+    }
+
+    private func addTag(_ tag: String) {
+        let cleaned = tag.trimmingCharacters(in: .whitespaces)
+        guard !cleaned.isEmpty, !editTags.contains(cleaned) else { return }
+        editTags.append(cleaned)
+        tagDraft = ""
     }
 
     private var categoryGrid: some View {
@@ -310,7 +422,7 @@ struct QuickReviewSheet: View {
             // Confirm (big)
             Button {
                 let cleanName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
-                onConfirm(txn, cleanName, selectedSlug, rememberName, rememberCategory, applyToPast && rememberCategory)
+                onConfirm(txn, cleanName, selectedSlug, editTags, rememberName, rememberCategory, applyToPast && rememberCategory)
                 advance()
             } label: {
                 HStack(spacing: 6) {
@@ -385,12 +497,15 @@ struct QuickReviewSheet: View {
         guard let txn = current else { return }
         editName = txn.merchantName.isEmpty ? txn.merchantRaw : txn.merchantName
         selectedSlug = txn.categorySlug
+        editTags = txn.tags
+        tagDraft = ""
         // Default everything ON — the user's corrections are remembered AND
         // automatically applied to past transactions for the same merchant.
         rememberName = true
         rememberCategory = true
         applyToPast = true
         nameFieldFocused = false
+        tagFieldFocused = false
     }
 
     private func advance() {
