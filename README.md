@@ -7,7 +7,7 @@ The goal: every bank transaction gets captured automatically — via SMS, PDF st
 ## Capabilities
 
 **Transaction capture**
-- **SMS** — paste a bank SMS into the app (manual paste OR via the Apple Shortcuts automation that fires on every bank message). Parsed by 6 bank-specific parsers (HDFC Savings & CC, ICICI CC, SBI CC, Federal Bank) with generic fallbacks for Axis / Kotak / Yes Bank / IDFC / IndusInd / RBL.
+- **SMS** — paste a bank SMS into the app (manual paste OR via the Apple Shortcuts automation that fires on every bank message). Parsed by 7 bank-specific parsers (HDFC Savings debit & credit, HDFC CC, ICICI CC, SBI CC, Federal Bank) with generic fallbacks for Axis / Kotak / Yes Bank / IDFC / IndusInd / RBL.
 - **PDF statements** — Tata Neu / Regalia / SBI Cashback / ICICI Sapphiro / Federal Bank PDFs. Multi-line transaction records are stitched back together. HDFC Savings PDFs are column-scrambled by PDFKit and are skipped honestly (user is told).
 - **Manual** — standard add-transaction sheet.
 
@@ -47,14 +47,37 @@ The goal: every bank transaction gets captured automatically — via SMS, PDF st
 
 ## SMS-to-Transaction Automation
 
-iOS doesn't let third-party apps read SMS. The workaround is an Apple Shortcuts automation:
+iOS doesn't let third-party apps read SMS. The workaround is an Apple Shortcuts automation backed by a custom **App Intent** (`LogBankSMSIntent`) that runs silently in the background — even when the iPhone is locked.
 
-1. **Shortcut "Log Bank SMS"** (4 steps): Receive Shortcut Input → URL Encode → URL `financetracker://import?sms=[URL Encoded Text]` → Open URL.
-2. **Automation**: Trigger on "Message Received" from your bank sender IDs (e.g. `JZ-HDFCBK`, `VK-SBICRD`, etc.) → Run shortcut `Log Bank SMS` with the message content as input → Run Immediately.
+### One-time Shortcut setup
 
-When a bank SMS arrives, the app opens, parses the SMS, auto-saves the transaction, and dismisses — about 2 seconds.
+1. Open **Shortcuts → New Shortcut**.
+2. Tap **Add Action** → search for **"Log Bank SMS"** (listed under FinanceTracker).
+3. Tap the action → set the **SMS Text** parameter to **Shortcut Input**.
+4. Name the shortcut **"Log Bank SMS"** and save.
 
-Detailed step-by-step instructions live inline in the SMSImportView's explanation card.
+> **Replacing the old URL-scheme shortcut?** Delete the old 4-step shortcut (Receive → URL Encode → URL → Open URL) and replace it with this single-action version.
+
+### Automation (one per bank sender)
+
+Create one automation per bank — filtering by **Sender** is more reliable than keyword matching and catches refunds, reversals, and any future SMS format changes automatically.
+
+1. **Shortcuts → Automation → New Automation → Message**.
+2. Set **From**: enter your bank's sender ID (the name shown at the top of their SMS thread, e.g. `JD-HDFCBK`, `VM-SBICRD`, `AX-ICICIB`, `AX-FEDBNK`).
+3. Leave the "Containing" field **empty**.
+4. Set **Run**: **Immediately** (no confirmation prompt).
+5. Add action: **Run Shortcut → "Log Bank SMS"** with **Message Content** as input.
+
+Repeat for each bank sender. All automations share the same "Log Bank SMS" shortcut.
+
+### How it works
+
+When a bank SMS arrives (phone locked or unlocked):
+1. iOS fires the automation → calls `LogBankSMSIntent` silently in the background.
+2. The intent writes the SMS text to a shared App Group queue (no UI shown, no unlock required).
+3. Next time you open FinanceTracker, the app drains the queue and saves all pending transactions automatically.
+
+Transactions are deduplicated: the same SMS saved within 2 minutes is skipped.
 
 ## Setup
 

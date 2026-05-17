@@ -100,6 +100,10 @@ struct FinanceTrackerApp: App {
                 if phase == .background || phase == .inactive {
                     if faceIDEnabled { isUnlocked = false }
                 }
+                // Drain any SMS queued by LogBankSMSIntent while the phone was locked.
+                if phase == .active {
+                    appContainer.processPendingSMS()
+                }
             }
             .onChange(of: faceIDEnabled) { _, enabled in
                 // If the user turns the toggle off, ensure the app stays unlocked.
