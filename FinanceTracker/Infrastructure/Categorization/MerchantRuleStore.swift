@@ -72,7 +72,7 @@ final class MerchantRuleStore {
         } else {
             let rule = MerchantRuleModel(
                 merchantKey: key,
-                merchantDisplay: (displayName?.isEmpty == false ? displayName! : merchant),
+                merchantDisplay: displayName.flatMap { $0.isEmpty ? nil : $0 } ?? merchant,
                 categorySlug: categorySlug ?? "others"
             )
             context.insert(rule)
