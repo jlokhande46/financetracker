@@ -171,6 +171,8 @@ final class PDFStatementParser {
         // Ordered most-specific → least-specific. The first match wins, so put the
         // patterns that target the last 4 digits of a masked card number first.
         let patterns = [
+            // ICICI Sapphiro format: "3747XXXXXXXX2001" — first 4 digits + 8+ X's + last 4 digits, no spaces
+            #"\d{4}[xX]{6,}(\d{4})\b"#,
             // "XXXX XXXX XXXX 6624" — fully masked card number
             #"X{4}\s*X{4}\s*X{4}\s*(\d{4})\b"#,
             // "Card ending 6624" / "Card ending in 6624"

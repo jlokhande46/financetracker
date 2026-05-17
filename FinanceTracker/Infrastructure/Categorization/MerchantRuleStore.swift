@@ -110,9 +110,18 @@ final class MerchantRuleStore {
     // MARK: - Helpers
 
     private func normalize(_ raw: String) -> String {
-        raw.lowercased()
-            .replacingOccurrences(of: #"[^a-z0-9 ]"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
+        var s = raw.lowercased()
+        // Strip UPI / POS / NEFT prefixes so "upi-swiggy" and "swiggy" share a key.
+        s = s.replacingOccurrences(of: #"^(?:upi[-/ ]|pos[-/ ]|neft[-/ ]|imps[-/ ]|rtgs[-/ ]|pay[-*]|cas[-*])"#,
+                                   with: "", options: .regularExpression)
+        // Strip everything after "@" (UPI VPA handle: "jay@okhdfc" → "jay").
+        if let at = s.firstIndex(of: "@") {
+            s = String(s[..<at])
+        }
+        s = s.replacingOccurrences(of: #"[^a-z0-9 ]"#, with: " ", options: .regularExpression)
+        // Drop long digit runs (UPI/ref numbers) so the key isn't transaction-specific.
+        s = s.replacingOccurrences(of: #"\b\d{5,}\b"#, with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespaces)
     }
 }
