@@ -36,6 +36,8 @@ final class TransactionListViewModel {
     var showAddSheet: Bool = false
     var showFilterSheet: Bool = false
     var isLoading: Bool = false
+    /// Set after a bulk recategorization; the view shows a toast and then clears this.
+    var bulkUpdateMessage: String? = nil
 
     var hasActiveFilters: Bool {
         selectedCategory != nil || selectedSource != nil || selectedType != nil
@@ -165,12 +167,15 @@ final class TransactionListViewModel {
 
     /// Full review action: updates name + category and optionally saves merchant rules
     /// for the name and/or category so future imports auto-apply them.
+    /// When `applyToPast` is true (and `rememberCategory` is on), all existing transactions
+    /// from the same merchant are re-categorized in bulk.
     func confirmReview(
         transaction: TransactionEntity,
         newName: String?,
         newSlug: String,
         rememberName: Bool,
-        rememberCategory: Bool
+        rememberCategory: Bool,
+        applyToPast: Bool = false
     ) {
         var updated = transaction
         if let n = newName, !n.isEmpty {
@@ -186,8 +191,6 @@ final class TransactionListViewModel {
         }
         pendingReviewTransactions.removeAll { $0.id == transaction.id }
 
-        // The key for the rule must match what future imports will see — the raw
-        // merchant string. So we key by merchantRaw, not the (possibly renamed) display.
         if rememberName || rememberCategory {
             MerchantRuleStore.shared.saveRule(
                 merchant: transaction.merchantRaw.isEmpty ? transaction.merchantName : transaction.merchantRaw,
@@ -195,7 +198,38 @@ final class TransactionListViewModel {
                 displayName: rememberName ? newName : nil
             )
         }
+
+        if applyToPast && rememberCategory {
+            let key = transaction.merchantRaw.isEmpty ? transaction.merchantName : transaction.merchantRaw
+            let count = transactionRepo.bulkRecategorize(
+                merchantRaw: key,
+                merchantNameKey: transaction.merchantName,
+                newSlug: newSlug
+            )
+            if count > 0 {
+                let catName = CategoryEntity.find(slug: newSlug).name
+                bulkUpdateMessage = "Updated \(count) past transaction\(count == 1 ? "" : "s") to \(catName)"
+                Task { await load() }
+                return
+            }
+        }
         applyFilters()
+    }
+
+    /// Re-categorizes all past transactions for the given merchant in one shot.
+    /// Used by `EditCategorySheet` when "Apply to past" is toggled on.
+    func bulkRecategorize(transaction: TransactionEntity, newSlug: String) {
+        let key = transaction.merchantRaw.isEmpty ? transaction.merchantName : transaction.merchantRaw
+        let count = transactionRepo.bulkRecategorize(
+            merchantRaw: key,
+            merchantNameKey: transaction.merchantName,
+            newSlug: newSlug
+        )
+        if count > 0 {
+            let catName = CategoryEntity.find(slug: newSlug).name
+            bulkUpdateMessage = "Updated \(count) past transaction\(count == 1 ? "" : "s") to \(catName)"
+            Task { await load() }
+        }
     }
 
     /// Set or clear the user's per-transaction intent override. Pass `nil` to

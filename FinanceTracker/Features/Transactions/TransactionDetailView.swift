@@ -122,7 +122,7 @@ struct TransactionDetailView: View {
                 }
             }
             .sheet(isPresented: $showEditCategory) {
-                EditCategorySheet(transaction: editableTransaction) { newSlug, remember in
+                EditCategorySheet(transaction: editableTransaction) { newSlug, remember, applyToPast in
                     editableTransaction.categorySlug = newSlug
                     editableTransaction.isConfirmed = true
                     onUpdate?(editableTransaction)
@@ -131,6 +131,13 @@ struct TransactionDetailView: View {
                             ? editableTransaction.merchantRaw
                             : editableTransaction.merchantName
                         MerchantRuleStore.shared.saveRule(merchant: merchantKey, categorySlug: newSlug)
+                    }
+                    if applyToPast {
+                        container?.transactionRepo.bulkRecategorize(
+                            merchantRaw: editableTransaction.merchantRaw,
+                            merchantNameKey: editableTransaction.merchantName,
+                            newSlug: newSlug
+                        )
                     }
                 }
             }

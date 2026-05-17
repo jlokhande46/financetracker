@@ -3,18 +3,18 @@ import SwiftData
 
 @Model
 final class CardStatementModel {
-    @Attribute(.unique) var id: UUID
-    var accountId: UUID
-    var accountName: String
+    @Attribute(.unique) var id: UUID = UUID()
+    var accountId: UUID = UUID()
+    var accountName: String = ""
     var accountLast4: String?
-    var accountColorHex: String
+    var accountColorHex: String = "#7B6EF6"
     var statementDate: Date?
-    var dueDate: Date
-    var totalDueDouble: Double
+    var dueDate: Date = Date()
+    var totalDueDouble: Double = 0
     var minimumDueDouble: Double?
-    var isPaid: Bool
+    var isPaid: Bool = false
     var paidDate: Date?
-    var importedAt: Date
+    var importedAt: Date = Date()
 
     init(
         id: UUID = UUID(),

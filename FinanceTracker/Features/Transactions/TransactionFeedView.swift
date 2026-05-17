@@ -7,6 +7,8 @@ struct TransactionFeedView: View {
     @State private var reviewTransaction: TransactionEntity? = nil
     @State private var showSMSImport: Bool = false
     @State private var showQuickReview: Bool = false
+    @State private var showBulkToast: Bool = false
+    @State private var bulkToastMessage: String = ""
 
     private var deepLink: DeepLinkHandler { DeepLinkHandler.shared }
 
@@ -143,13 +145,14 @@ struct TransactionFeedView: View {
             .sheet(isPresented: $showQuickReview) {
                 QuickReviewSheet(
                     transactions: viewModel.pendingReviewTransactions,
-                    onConfirm: { txn, newName, newSlug, rememberName, rememberCategory in
+                    onConfirm: { txn, newName, newSlug, rememberName, rememberCategory, applyToPast in
                         viewModel.confirmReview(
                             transaction: txn,
                             newName: newName,
                             newSlug: newSlug,
                             rememberName: rememberName,
-                            rememberCategory: rememberCategory
+                            rememberCategory: rememberCategory,
+                            applyToPast: applyToPast
                         )
                     },
                     onSkip: { _ in },
@@ -161,6 +164,14 @@ struct TransactionFeedView: View {
                 .presentationDragIndicator(.visible)
                 .onDisappear { Task { await viewModel.load() } }
             }
+            .onChange(of: viewModel.bulkUpdateMessage) { _, message in
+                if let msg = message {
+                    bulkToastMessage = msg
+                    showBulkToast = true
+                    viewModel.bulkUpdateMessage = nil
+                }
+            }
+            .toast(isPresented: $showBulkToast, message: bulkToastMessage, type: .success)
         }
     }
 

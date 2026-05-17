@@ -41,15 +41,15 @@ struct FinanceTrackerApp: App {
             GoalModel.self
         ])
 
-        // Local-only by default. To enable iCloud sync:
-        //   1. Add the iCloud capability with CloudKit + a container in Signing & Capabilities
-        //   2. Replace `.none` below with `.automatic`
-        //   3. Verify every @Model has either default values or optionals on every property
-        //      (CloudKit requires this — non-optional non-default Decimals etc. will crash)
+        // iCloud sync via CloudKit.
+        // Xcode setup (one-time): Signing & Capabilities → + Capability → iCloud
+        //   ✓ CloudKit  →  container: iCloud.com.sovinnour.FinanceTracker
+        // All @Model properties carry property-level defaults so CloudKit can
+        // synthesise records without a no-arg initialiser.
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .none
+            cloudKitDatabase: .automatic
         )
 
         let container: ModelContainer

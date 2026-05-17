@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CloudKit
 
 // MARK: - SettingsView
 
@@ -11,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("userName") private var userName: String = "Jayesh Lokhande"
     @AppStorage("userEmail") private var userEmail: String = "jayesh@example.com"
     @AppStorage("themePreference") private var themePreference: String = "dark"
+    @AppStorage("budgetAlertsEnabled") private var budgetAlertsEnabled: Bool = true
 
     @State private var showDocumentPicker: Bool = false
     @State private var showClearDataAlert: Bool = false
@@ -18,6 +20,7 @@ struct SettingsView: View {
     @State private var toastMessage: String = ""
     @State private var showToast: Bool = false
     @State private var toastType: ToastType = .success
+    @State private var iCloudStatus: CKAccountStatus = .couldNotDetermine
 
     var body: some View {
         NavigationStack {
@@ -27,6 +30,8 @@ struct SettingsView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: Spacing.xl) {
                         profileSection
+                        iCloudSection
+                        notificationsSection
                         appearanceSection
                         dataImportSection
                         privacySection
@@ -40,6 +45,7 @@ struct SettingsView: View {
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(Color.bgPrimary, for: .navigationBar)
+        .task { await checkICloudStatus() }
         }
         .toast(isPresented: $showToast, message: toastMessage, type: toastType)
         .fileImporter(
@@ -109,6 +115,89 @@ struct SettingsView: View {
         }
         .background(Color.bgCard)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: - iCloud Sync Section
+
+    private var iCloudStatusText: String {
+        switch iCloudStatus {
+        case .available: return "Syncing"
+        case .noAccount: return "Not signed in"
+        case .restricted: return "Restricted"
+        case .temporarilyUnavailable: return "Unavailable"
+        default: return "Checking..."
+        }
+    }
+
+    private var iCloudStatusColor: Color {
+        iCloudStatus == .available ? Color.incomeGreen : Color.warningAmber
+    }
+
+    private var iCloudSection: some View {
+        SettingsSectionCard(title: "iCloud Sync") {
+            HStack {
+                HStack(spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Radius.sm)
+                            .fill(Color.brandPrimary)
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "icloud.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sync Across Devices")
+                            .font(.bodyMedium)
+                            .foregroundColor(.textPrimary)
+                        Text("Your data stays in sync on all your Apple devices")
+                            .font(.caption)
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+                Spacer()
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(iCloudStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text(iCloudStatusText)
+                        .font(.caption)
+                        .foregroundColor(.textSecondary)
+                }
+            }
+            .padding(Spacing.base)
+        }
+    }
+
+    // MARK: - Notifications Section
+
+    private var notificationsSection: some View {
+        SettingsSectionCard(title: "Notifications") {
+            HStack {
+                HStack(spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Radius.sm)
+                            .fill(Color.warningAmber)
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "bell.badge.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Budget Alerts")
+                            .font(.bodyMedium)
+                            .foregroundColor(.textPrimary)
+                        Text("Notify at 80% and 100% of any budget")
+                            .font(.caption)
+                            .foregroundColor(.textSecondary)
+                    }
+                }
+                Spacer()
+                Toggle("", isOn: $budgetAlertsEnabled)
+                    .tint(Color.brandPrimary)
+                    .labelsHidden()
+            }
+            .padding(Spacing.base)
+        }
     }
 
     // MARK: - Data Import Section
@@ -300,6 +389,10 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
+
+    private func checkICloudStatus() async {
+        iCloudStatus = (try? await CKContainer.default().accountStatus()) ?? .couldNotDetermine
+    }
 
     private func initials(from name: String) -> String {
         let parts = name.split(separator: " ")

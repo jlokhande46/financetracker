@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct QuickReviewSheet: View {
-    /// (transaction, newName, newCategorySlug, rememberName, rememberCategory)
-    var onConfirm: (TransactionEntity, String, String, Bool, Bool) -> Void
+    /// (transaction, newName, newCategorySlug, rememberName, rememberCategory, applyToPast)
+    var onConfirm: (TransactionEntity, String, String, Bool, Bool, Bool) -> Void
     var onSkip: (TransactionEntity) -> Void
     var onDelete: (TransactionEntity) -> Void
 
@@ -13,11 +13,12 @@ struct QuickReviewSheet: View {
     @State private var selectedSlug: String = "others"
     @State private var rememberName: Bool = true
     @State private var rememberCategory: Bool = true
+    @State private var applyToPast: Bool = false
     @FocusState private var nameFieldFocused: Bool
 
     init(
         transactions: [TransactionEntity],
-        onConfirm: @escaping (TransactionEntity, String, String, Bool, Bool) -> Void,
+        onConfirm: @escaping (TransactionEntity, String, String, Bool, Bool, Bool) -> Void,
         onSkip: @escaping (TransactionEntity) -> Void,
         onDelete: @escaping (TransactionEntity) -> Void
     ) {
@@ -230,7 +231,18 @@ struct QuickReviewSheet: View {
                 isOn: $rememberCategory,
                 icon: "tag.fill"
             )
+            if rememberCategory && selectedSlug != (current?.categorySlug ?? "") {
+                rememberToggleRow(
+                    label: "Fix past transactions too",
+                    sub: "Update all existing transactions from this merchant",
+                    isOn: $applyToPast,
+                    icon: "clock.arrow.circlepath"
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
+        .animation(.springy, value: rememberCategory)
+        .animation(.springy, value: selectedSlug)
     }
 
     private func rememberToggleRow(label: String, sub: String, isOn: Binding<Bool>, icon: String) -> some View {
@@ -298,7 +310,7 @@ struct QuickReviewSheet: View {
             // Confirm (big)
             Button {
                 let cleanName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
-                onConfirm(txn, cleanName, selectedSlug, rememberName, rememberCategory)
+                onConfirm(txn, cleanName, selectedSlug, rememberName, rememberCategory, applyToPast && rememberCategory)
                 advance()
             } label: {
                 HStack(spacing: 6) {
@@ -371,6 +383,7 @@ struct QuickReviewSheet: View {
         // Default to ON — the user wants their corrections to be remembered by default.
         rememberName = true
         rememberCategory = true
+        applyToPast = false
         nameFieldFocused = false
     }
 
