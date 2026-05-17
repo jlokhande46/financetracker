@@ -46,6 +46,9 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(Color.bgPrimary, for: .navigationBar)
         .task { await checkICloudStatus() }
+        .onChange(of: iCloudSyncEnabled) { _, _ in
+            Task { await checkICloudStatus() }
+        }
         }
         .toast(isPresented: $showToast, message: toastMessage, type: toastType)
         .fileImporter(
@@ -407,6 +410,14 @@ struct SettingsView: View {
     // MARK: - Helpers
 
     private func checkICloudStatus() async {
+        // Only touch CKContainer when the user has explicitly opted into iCloud.
+        // Without the CloudKit entitlement in the build, even default container
+        // initialisation crashes (CKContainer.m:748 "must have a
+        // com.apple.developer.icloud-services entitlement").
+        guard iCloudSyncEnabled else {
+            iCloudStatus = .couldNotDetermine
+            return
+        }
         iCloudStatus = (try? await CKContainer.default().accountStatus()) ?? .couldNotDetermine
     }
 
