@@ -13,7 +13,7 @@ struct QuickReviewSheet: View {
     @State private var selectedSlug: String = "others"
     @State private var rememberName: Bool = true
     @State private var rememberCategory: Bool = true
-    @State private var applyToPast: Bool = false
+    @State private var applyToPast: Bool = true
     @FocusState private var nameFieldFocused: Bool
 
     init(
@@ -231,10 +231,10 @@ struct QuickReviewSheet: View {
                 isOn: $rememberCategory,
                 icon: "tag.fill"
             )
-            if rememberCategory && selectedSlug != (current?.categorySlug ?? "") {
+            if rememberCategory {
                 rememberToggleRow(
                     label: "Fix past transactions too",
-                    sub: "Update all existing transactions from this merchant",
+                    sub: "Re-categorize every past transaction from this merchant",
                     isOn: $applyToPast,
                     icon: "clock.arrow.circlepath"
                 )
@@ -380,10 +380,11 @@ struct QuickReviewSheet: View {
         guard let txn = current else { return }
         editName = txn.merchantName.isEmpty ? txn.merchantRaw : txn.merchantName
         selectedSlug = txn.categorySlug
-        // Default to ON — the user wants their corrections to be remembered by default.
+        // Default everything ON — the user's corrections are remembered AND
+        // automatically applied to past transactions for the same merchant.
         rememberName = true
         rememberCategory = true
-        applyToPast = false
+        applyToPast = true
         nameFieldFocused = false
     }
 

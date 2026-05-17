@@ -346,8 +346,13 @@ final class PDFStatementParser {
             categoryConfidence = classification.confidence
         }
 
-        // Final confidence is the LOWER of category-confidence and direction-confidence.
-        let finalConfidence = min(categoryConfidence, inferred.directionConfidence)
+        // If the category came back with confidence 1.0 (user rule or CC-payment
+        // shortcut), trust it. The user has already approved this merchant — we
+        // don't want to drop the confidence and re-prompt for review just because
+        // the row's debit/credit was ambiguous.
+        let finalConfidence = categoryConfidence >= 1.0
+            ? 1.0
+            : min(categoryConfidence, inferred.directionConfidence)
 
         return TransactionEntity(
             id: UUID(),
