@@ -41,15 +41,11 @@ struct FinanceTrackerApp: App {
             GoalModel.self
         ])
 
-        // iCloud sync via CloudKit.
-        // Xcode setup (one-time): Signing & Capabilities → + Capability → iCloud
-        //   ✓ CloudKit  →  container: iCloud.com.sovinnour.FinanceTracker
-        // All @Model properties carry property-level defaults so CloudKit can
-        // synthesise records without a no-arg initialiser.
+        // Local-only SwiftData store. No CloudKit — Personal Team account.
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
-            cloudKitDatabase: .automatic
+            cloudKitDatabase: .none
         )
 
         let container: ModelContainer
