@@ -35,11 +35,13 @@ extension Date {
     }
 
     var startOfMonth: Date {
-        Calendar.current.dateInterval(of: .month, for: self)!.start
+        Calendar.current.dateInterval(of: .month, for: self)?.start
+            ?? Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: self))
+            ?? self
     }
 
     var endOfMonth: Date {
-        Calendar.current.dateInterval(of: .month, for: self)!.end
+        Calendar.current.dateInterval(of: .month, for: self)?.end ?? self
     }
 
     static var currentMonthStart: Date { Date().startOfMonth }

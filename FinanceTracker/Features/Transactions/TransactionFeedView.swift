@@ -536,7 +536,7 @@ private struct PendingReviewCard: View {
                         .foregroundStyle(Color.warningAmber)
                 }
 
-                Text(transaction.merchantName.isEmpty ? transaction.merchantRaw : transaction.merchantName)
+                Text({ let n = transaction.merchantName.isEmpty ? transaction.merchantRaw : transaction.merchantName; return n.isEmpty ? "Unknown" : n }())
                     .font(.caption)
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)

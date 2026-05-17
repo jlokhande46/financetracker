@@ -27,7 +27,7 @@ extension Decimal {
         case 1_00_00_000...: return String(format: "₹%.1fCr", d / 1_00_00_000)
         case 1_00_000...:    return String(format: "₹%.1fL", d / 1_00_000)
         case 1_000...:       return String(format: "₹%.1fK", d / 1_000)
-        default:             return "₹\(Int(d))"
+        default:             return String(format: d.truncatingRemainder(dividingBy: 1) == 0 ? "₹%.0f" : "₹%.2f", d)
         }
     }
 }
