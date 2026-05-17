@@ -41,6 +41,7 @@ final class SMSParser {
 
         // Specific (high-precision) parsers first
         if let r = parseHDFCSavingsSent(msg)             { return r }
+        if let r = parseHDFCSavingsCredited(msg)         { return r }
         if let r = parseFederalBankReceived(msg)         { return r }
         if let r = parseHDFCCreditCardTxn(msg)           { return r }
         if let r = parseHDFCCreditCardSpent(msg)         { return r }
@@ -74,6 +75,24 @@ final class SMSParser {
             last4: r[2],
             date: parseDate(r[4], formats: ["dd/MM/yy", "dd/MM/yyyy"]),
             upiRef: r[5],
+            bankRef: nil,
+            rawText: msg
+        )
+    }
+
+    // MARK: - HDFC Savings Credit — "Credit Alert! Rs.X credited to HDFC Bank A/c XXNNNN on DD-MM-YY from VPA xxx (UPI nnn)"
+
+    private func parseHDFCSavingsCredited(_ msg: String) -> ParsedSMSResult? {
+        let pattern = #"(?is)(?:Credit\s+Alert!?\s*)?Rs\.?\s*([\d,]+(?:\.\d+)?)\s+credited\s+to\s+HDFC\s+Bank\s+A/?c\s+X+(\d{4})\s+on\s+(\d{2}-\d{2}-\d{2,4})\s+from\s+(?:VPA\s+)?(\S+)(?:\s*\(UPI\s+(\d+)\))?"#
+        guard let r = match(pattern, in: msg) else { return nil }
+        guard let amount = parseAmount(r[1]) else { return nil }
+        return ParsedSMSResult(
+            amount: amount,
+            type: .credit,
+            merchantRaw: r[4].trimmingCharacters(in: .whitespacesAndNewlines),
+            last4: r[2],
+            date: parseDate(r[3], formats: ["dd-MM-yy", "dd-MM-yyyy"]),
+            upiRef: r[5].isEmpty ? nil : r[5],
             bankRef: nil,
             rawText: msg
         )
@@ -312,11 +331,19 @@ final class SMSParser {
         return nil
     }
 
+    /// When SMS gives only DD-MM (no year), pick the nearest year so a Dec-31 txn
+    /// arriving Jan-1 isn't filed under next year.
     private func fillCurrentYear(_ ddMM: String) -> Date? {
         let cal = Calendar.current
-        let year = cal.component(.year, from: Date())
+        let now = Date()
+        let currentYear = cal.component(.year, from: now)
         dateFormatter.dateFormat = "dd-MM-yyyy"
-        return dateFormatter.date(from: "\(ddMM)-\(year)")
+        guard let thisYear = dateFormatter.date(from: "\(ddMM)-\(currentYear)") else { return nil }
+        let daysAhead = cal.dateComponents([.day], from: now, to: thisYear).day ?? 0
+        if daysAhead > 30 {
+            return dateFormatter.date(from: "\(ddMM)-\(currentYear - 1)") ?? thisYear
+        }
+        return thisYear
     }
 
     private func amountResult(_ amountStr: String, type: TransactionType, rawText: String) -> ParsedSMSResult? {
