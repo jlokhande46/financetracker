@@ -3,6 +3,16 @@
 <plist version="1.0">
 <dict>
 	<!--
+	  App Group — shared UserDefaults between LogBankSMSIntent and the main app.
+	  In Xcode: Target → Signing & Capabilities → + Capability → App Groups → add this group.
+	  Works with a free Personal Team account (unlike CloudKit).
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.sovinnour.FinanceTracker</string>
+	</array>
+
+	<!--
 	  iCloud / CloudKit entitlements intentionally removed.
 	  Personal / free Apple ID signing teams cannot enable iCloud capability.
 	  To re-enable: paid Apple Developer Program account, then in Xcode:
