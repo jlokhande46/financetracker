@@ -237,6 +237,7 @@ final class PDFStatementParser {
         let lower = text.lowercased()
         if lower.contains("hdfc bank")   { return "HDFC" }
         if lower.contains("icici bank")  { return "ICICI" }
+        if lower.contains("sbi card")    { return "SBI" }
         if lower.contains("state bank")  { return "SBI" }
         if lower.contains("axis bank")   { return "Axis" }
         if lower.contains("kotak")       { return "Kotak" }
@@ -292,15 +293,26 @@ final class PDFStatementParser {
         let amountsInPostDate = extractAmounts(in: postDate, allowWholeNumbers: true)
         guard !amountsInPostDate.isEmpty else { return nil }
 
-        // Shift each match's range back to absolute coordinates in `line`.
-        let amounts = amountsInPostDate.map { m in
-            AmountMatch(
-                value: m.value,
-                range: NSRange(location: m.range.location + dateEnd, length: m.range.length),
-                hasCRSuffix: m.hasCRSuffix,
-                hasDRSuffix: m.hasDRSuffix
-            )
+        // Shift each match's range back to absolute coordinates in `line`,
+        // then remove reward-token values (e.g. HDFC NeuCoins "+ 4" in the
+        // NeuCoins column that appears before the actual transaction amount).
+        // A reward token is an amount immediately preceded by "+" and only
+        // whitespace — no currency symbol — meaning it is a points/coins count.
+        let amounts = amountsInPostDate.compactMap { m -> AmountMatch? in
+            let absRange = NSRange(location: m.range.location + dateEnd, length: m.range.length)
+            if absRange.location > 0 {
+                let lookback = min(absRange.location, 20)
+                let before = lineNS.substring(with: NSRange(location: absRange.location - lookback,
+                                                             length: lookback))
+                let hasPlusNoFX = before.range(of: #"\+\s+$"#, options: .regularExpression) != nil
+                                  && before.range(of: #"(?:₹|Rs\.?|INR|C)\s*$"#,
+                                                  options: .regularExpression) == nil
+                if hasPlusNoFX { return nil }  // reward token — skip
+            }
+            return AmountMatch(value: m.value, range: absRange,
+                               hasCRSuffix: m.hasCRSuffix, hasDRSuffix: m.hasDRSuffix)
         }
+        guard !amounts.isEmpty else { return nil }
 
         let amountStart = amounts.first!.range.location
         guard dateEnd < amountStart else { return nil }
@@ -308,9 +320,20 @@ final class PDFStatementParser {
         let narrationLength = amountStart - dateEnd
         guard narrationLength > 0 else { return nil }
 
-        let narration = lineNS.substring(with: NSRange(location: dateEnd, length: narrationLength))
+        // Raw narration — may still contain HDFC CC artifacts like "+ 4 C" (NeuCoins
+        // suffix before the ₹ symbol) or a trailing standalone "C" (₹ rendered as ASCII).
+        var narration = lineNS.substring(with: NSRange(location: dateEnd, length: narrationLength))
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "|*:- \t"))
+        // Strip any trailing reward/sign suffix of the form "+" "+ N" "+ C" or "+ N C"
+        // where N is NeuCoins and C is the ₹ glyph — all artefacts of HDFC CC PDFs.
+        narration = narration
+            .replacingOccurrences(of: #"\s*\+\s*\d*\s*C?\s*$"#, with: "", options: .regularExpression)
+        // Strip trailing standalone "C" — ₹ symbol PDF artefact (plain debit lines)
+        if narration.hasSuffix(" C") {
+            narration = String(narration.dropLast(2))
+        }
+        narration = narration.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !narration.isEmpty else { return nil }
         guard isValidMerchantNarration(narration) else { return nil }
@@ -381,8 +404,10 @@ final class PDFStatementParser {
     /// A "record" is a transaction's text — possibly spanning multiple PDFKit
     /// output lines. A new record begins at any line that starts with a date.
     private func groupLinesIntoRecords(_ lines: [String]) -> [String] {
+        // Matches slash/dash-separated dates (DD/MM/YYYY, DD-MMM-YY …) AND
+        // space-separated dates (07 Apr 26) used by SBI Card statements.
         guard let regex = try? NSRegularExpression(
-            pattern: #"^\d{1,2}[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}\b"#
+            pattern: #"^\d{1,2}(?:[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}|\s+[A-Za-z]{3,9}\s+\d{2,4})\b"#
         ) else { return lines }
 
         var records: [String] = []
@@ -494,7 +519,9 @@ final class PDFStatementParser {
         "total amount due", "minimum amount due", "amount due",
         "available credit", "available limit", "credit limit",
         "payment due date", "statement date",
+        // GST lines: both standalone (" gst ") and HDFC-style prefixed ("igst-vps…")
         " gst ", " igst ", " cgst ", " sgst ",
+        "igst-", "cgst-", "sgst-",
     ]
 
     private func isJunkNarration(_ narration: String) -> Bool {
@@ -594,13 +621,14 @@ final class PDFStatementParser {
             return InferenceResult(amount: chosen.value, type: .debit, directionConfidence: 1.0)
         }
 
-        // 3. HDFC CC (Tata Neu / Regalia) — '+' sign appears before the amount, sometimes
-        // separated by currency markers ("₹", "Rs.", "INR") and/or whitespace.
-        // Match: + followed by only whitespace / currency until end-of-segment.
+        // 3. HDFC CC (Tata Neu / Regalia) — '+' sign immediately before the currency
+        // marker and amount indicates a credit/refund.  Currency symbol is REQUIRED
+        // (not optional) so that NeuCoins columns like "+ 4" are not mistaken for a
+        // credit amount.  PDFKit renders the ₹ glyph as "C" in HDFC CC PDFs.
         if let first = amounts.first {
             let lineNS = line as NSString
             let beforeAmount = lineNS.substring(to: first.range.location)
-            let beforePattern = #"\+\s*(?:₹|Rs\.?|INR)?\s*$"#
+            let beforePattern = #"\+\s*(?:₹|Rs\.?|INR|C)\s*$"#
             if beforeAmount.range(of: beforePattern, options: .regularExpression) != nil {
                 return InferenceResult(amount: first.value, type: .credit, directionConfidence: 1.0)
             }
@@ -626,6 +654,18 @@ final class PDFStatementParser {
                 let type: TransactionType = idx == 0 ? .debit : .credit
                 return InferenceResult(amount: amount, type: type, directionConfidence: 0.9)
             }
+        }
+
+        // 4.5. Two-amount rows with no explicit direction — typical of CC statements
+        //      where the first column holds reward points (e.g. ICICI: "14 747.50").
+        //      After NeuCoins/reward-token filtering in parseTransactionLine, if two
+        //      amounts remain and neither carries a direction indicator, the last one
+        //      is the transaction amount and the first is an intermediate column value.
+        if amounts.count == 2,
+           !amounts[0].hasCRSuffix, !amounts[0].hasDRSuffix,
+           !amounts[1].hasCRSuffix, !amounts[1].hasDRSuffix,
+           amounts[1].value > 0 {
+            return InferenceResult(amount: amounts[1].value, type: .debit, directionConfidence: 0.5)
         }
 
         // 5. Strict credit keywords. CC-payment phrasings are very high-confidence —
