@@ -10,14 +10,31 @@ struct AddTransactionView: View {
     @State private var selectedDate: Date = Date()
     @State private var selectedAccountId: UUID? = nil
     @State private var notes: String = ""
+    @State private var tags: [String] = []
+    @State private var tagDraft: String = ""
     @State private var isDatePickerExpanded: Bool = false
     @FocusState private var isAmountFocused: Bool
     @FocusState private var isMerchantFocused: Bool
+    @FocusState private var isTagFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appContainer) private var container
 
     private var accounts: [AccountEntity] {
         container?.accountRepo.fetchAll() ?? []
+    }
+
+    private var allKnownTags: [String] {
+        guard let container else { return [] }
+        var set = Set<String>()
+        for t in container.transactionRepo.fetchAll() { for tag in t.tags { set.insert(tag) } }
+        return Array(set).sorted()
+    }
+
+    private var tagSuggestions: [String] {
+        let draft = tagDraft.trimmingCharacters(in: .whitespaces).lowercased()
+        let pool = allKnownTags.filter { !tags.contains($0) }
+        if draft.isEmpty { return Array(pool.prefix(8)) }
+        return pool.filter { $0.lowercased().contains(draft) }.prefix(8).map { $0 }
     }
 
     private var parsedAmount: Decimal {
@@ -77,6 +94,8 @@ struct AddTransactionView: View {
 
                         // Notes
                         notesField
+
+                        tagsField
 
                         // Save Button
                         saveButton
@@ -354,6 +373,98 @@ struct AddTransactionView: View {
         }
     }
 
+    private var tagsField: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("Tags (optional)")
+                .font(.caption)
+                .foregroundStyle(Color.textSecondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, Spacing.base)
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                if !tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Spacing.xs) {
+                            ForEach(tags, id: \.self) { tag in
+                                HStack(spacing: 4) {
+                                    Text("#\(tag)")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.brandPrimary)
+                                    Button {
+                                        tags.removeAll { $0 == tag }
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(Color.brandPrimary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, 4)
+                                .background(Color.brandPrimary.opacity(0.15))
+                                .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: Spacing.xs) {
+                    TextField("Add a tag…", text: $tagDraft)
+                        .font(.bodyMedium)
+                        .foregroundStyle(Color.textPrimary)
+                        .tint(Color.brandPrimary)
+                        .focused($isTagFocused)
+                        .submitLabel(.done)
+                        .onSubmit { commitTag() }
+                    if !tagDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Button("Add", action: commitTag)
+                            .font(.caption)
+                            .foregroundStyle(Color.brandPrimary)
+                    }
+                }
+
+                if !tagSuggestions.isEmpty && (isTagFocused || !tagDraft.isEmpty) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Spacing.xs) {
+                            ForEach(tagSuggestions, id: \.self) { suggestion in
+                                Button {
+                                    addTag(suggestion)
+                                } label: {
+                                    Text("+ \(suggestion)")
+                                        .font(.micro)
+                                        .foregroundStyle(Color.textSecondary)
+                                        .padding(.horizontal, Spacing.sm)
+                                        .padding(.vertical, 4)
+                                        .background(Color.bgElevated)
+                                        .overlay(Capsule().stroke(Color.textTertiary.opacity(0.3), lineWidth: 0.5))
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(Spacing.base)
+            .background(Color.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            .padding(.horizontal, Spacing.base)
+        }
+    }
+
+    private func commitTag() {
+        let cleaned = tagDraft.trimmingCharacters(in: .whitespaces)
+        guard !cleaned.isEmpty else { return }
+        addTag(cleaned)
+    }
+
+    private func addTag(_ tag: String) {
+        let cleaned = tag.trimmingCharacters(in: .whitespaces)
+        guard !cleaned.isEmpty, !tags.contains(cleaned) else { return }
+        tags.append(cleaned)
+        tagDraft = ""
+    }
+
     private var saveButton: some View {
         Button {
             saveTransaction()
@@ -397,6 +508,7 @@ struct AddTransactionView: View {
             confidence: 1.0,
             isConfirmed: true,
             isRecurring: false,
+            tags: tags,
             notes: notes.isEmpty ? nil : notes,
             accountId: selectedAccountId
         )

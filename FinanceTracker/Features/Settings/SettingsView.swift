@@ -293,6 +293,17 @@ struct SettingsView: View {
                 Divider().background(Color.bgElevated)
 
                 SettingsRow(
+                    icon: "link.circle.fill",
+                    iconColor: .brandAccent,
+                    title: "Re-link Orphan Transactions",
+                    subtitle: "Match unlinked rows to accounts by SMS / PDF content"
+                ) {
+                    relinkOrphans()
+                }
+
+                Divider().background(Color.bgElevated)
+
+                SettingsRow(
                     icon: "trash.fill",
                     iconColor: .expenseRed,
                     title: "Clear All Data",
@@ -470,6 +481,17 @@ struct SettingsView: View {
             showSuccessToast("Imported \(parsed.transactions.count) transactions\(bankSuffix) · Due date saved")
         } else {
             showSuccessToast("Imported \(parsed.transactions.count) transactions\(bankSuffix)")
+        }
+    }
+
+    private func relinkOrphans() {
+        guard let container else { return }
+        let accounts = container.accountRepo.fetchAll()
+        let count = container.transactionRepo.relinkOrphanTransactions(accounts: accounts)
+        if count > 0 {
+            showSuccessToast("Linked \(count) transaction\(count == 1 ? "" : "s") to accounts")
+        } else {
+            showSuccessToast("No orphan transactions found")
         }
     }
 

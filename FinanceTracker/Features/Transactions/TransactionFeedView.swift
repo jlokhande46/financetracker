@@ -381,6 +381,15 @@ struct TransactionFeedView: View {
                         onTap: { selectedTransaction = txn },
                         onSetIntent: { newIntent in
                             withAnimation { viewModel.setIntentOverride(transaction: txn, intent: newIntent) }
+                        },
+                        onTapTag: { tag in
+                            withAnimation(.springy) {
+                                if viewModel.selectedTags.contains(tag) {
+                                    viewModel.selectedTags.remove(tag)
+                                } else {
+                                    viewModel.selectedTags.insert(tag)
+                                }
+                            }
                         }
                     )
                     .padding(.horizontal, Spacing.base)

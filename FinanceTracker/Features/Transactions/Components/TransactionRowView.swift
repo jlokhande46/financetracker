@@ -7,6 +7,9 @@ struct TransactionRowView: View {
     /// Called when the user taps the intent chip, swipes the row, or picks an
     /// option from the context menu. Pass `nil` to clear any override.
     var onSetIntent: ((CategoryIntent?) -> Void)? = nil
+    /// Called when the user taps a tag chip on the row — typically used to
+    /// add it as a filter on the feed.
+    var onTapTag: ((String) -> Void)? = nil
 
     @State private var dragOffset: CGFloat = 0
     @State private var didFireHaptic: Bool = false
@@ -139,13 +142,18 @@ struct TransactionRowView: View {
                             .font(.caption)
                             .foregroundStyle(Color.textSecondary)
                         ForEach(transaction.tags.prefix(2), id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(.micro)
-                                .foregroundStyle(Color.brandPrimary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(Color.brandPrimary.opacity(0.12))
-                                .clipShape(Capsule())
+                            Button {
+                                onTapTag?(tag)
+                            } label: {
+                                Text("#\(tag)")
+                                    .font(.micro)
+                                    .foregroundStyle(Color.brandPrimary)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.brandPrimary.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
                         if transaction.tags.count > 2 {
                             Text("+\(transaction.tags.count - 2)")
