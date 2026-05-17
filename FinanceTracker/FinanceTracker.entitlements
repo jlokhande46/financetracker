@@ -2,13 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  iCloud / CloudKit entitlements intentionally removed.
-	  Personal / free Apple ID signing teams cannot enable iCloud capability.
-	  To re-enable: paid Apple Developer Program account, then in Xcode:
-	    Target → Signing & Capabilities → + Capability → iCloud → ✓ CloudKit
-	    → container: iCloud.com.sovinnour.FinanceTracker
-	  Xcode rewrites this file automatically when the capability is added.
-	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.sovinnour.FinanceTracker</string>
+	</array>
 </dict>
 </plist>
