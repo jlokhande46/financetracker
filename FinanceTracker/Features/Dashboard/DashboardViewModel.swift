@@ -75,6 +75,29 @@ final class DashboardViewModel {
     // MARK: - Computed
 
     var unreadInsightCount: Int { insights.filter { !$0.isRead }.count }
+    var visibleInsights: [InsightEntity] { insights.filter { !$0.isRead } }
+
+    // MARK: - Insight dismissal (persisted via UserDefaults)
+
+    private static let dismissedInsightsKey = "dismissedInsightIDs"
+
+    static func persistedDismissedInsightIDs() -> Set<UUID> {
+        let raw = UserDefaults.standard.array(forKey: dismissedInsightsKey) as? [String] ?? []
+        return Set(raw.compactMap(UUID.init(uuidString:)))
+    }
+
+    private static func setPersistedDismissedInsightIDs(_ ids: Set<UUID>) {
+        UserDefaults.standard.set(ids.map(\.uuidString), forKey: dismissedInsightsKey)
+    }
+
+    func dismissInsight(_ id: UUID) {
+        var ids = Self.persistedDismissedInsightIDs()
+        ids.insert(id)
+        Self.setPersistedDismissedInsightIDs(ids)
+        if let idx = insights.firstIndex(where: { $0.id == id }) {
+            insights[idx].isRead = true
+        }
+    }
 
     // MARK: - Public Methods
 
@@ -242,14 +265,17 @@ final class DashboardViewModel {
         let cal = Calendar.current
         let mk = "\(Int(selectedMonth.timeIntervalSince1970))"
 
-        // Preserve isRead state for insights that already exist in the current list.
-        let previouslyRead = Set(insights.filter(\.isRead).map(\.id))
+        // Persisted-across-launches set of insights the user has dismissed.
+        // Union with in-memory state in case generation runs mid-session.
+        let persistedRead = Self.persistedDismissedInsightIDs()
+        let memoryRead = Set(insights.filter(\.isRead).map(\.id))
+        let alreadyRead = persistedRead.union(memoryRead)
         func makeInsight(key: String, type: InsightType, title: String, body: String,
                          amount: Decimal? = nil, categorySlug: String? = nil) -> InsightEntity {
             let id = stableInsightID("\(key)-\(mk)")
             return InsightEntity(id: id, type: type, title: title, body: body,
                                  amount: amount, categorySlug: categorySlug,
-                                 date: Date(), isRead: previouslyRead.contains(id))
+                                 date: Date(), isRead: alreadyRead.contains(id))
         }
 
         // 1. Savings insight

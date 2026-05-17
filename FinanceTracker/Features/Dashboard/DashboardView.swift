@@ -135,7 +135,7 @@ struct DashboardView: View {
                 }
 
                 // Insights horizontal scroll
-                if !viewModel.insights.isEmpty {
+                if !viewModel.visibleInsights.isEmpty {
                     insightsSection
                         .opacity(appearAnimation ? 1 : 0)
                         .animation(.easeOut(duration: 0.4).delay(0.15), value: appearAnimation)
@@ -241,10 +241,11 @@ struct DashboardView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Spacing.md) {
-                    ForEach(Array(viewModel.insights.enumerated()), id: \.element.id) { idx, insight in
+                    ForEach(Array(viewModel.visibleInsights.enumerated()), id: \.element.id) { idx, insight in
                         InsightCard(insight: insight) {
+                            // Persist dismissal so reload doesn't bring it back.
                             withAnimation(.springy) {
-                                viewModel.insights.removeAll { $0.id == insight.id }
+                                viewModel.dismissInsight(insight.id)
                             }
                         }
                         .opacity(appearAnimation ? 1 : 0)

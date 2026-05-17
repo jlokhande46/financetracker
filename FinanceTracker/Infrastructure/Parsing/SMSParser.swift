@@ -42,7 +42,9 @@ final class SMSParser {
         // Specific (high-precision) parsers first
         if let r = parseHDFCSavingsSent(msg)             { return r }
         if let r = parseHDFCSavingsCredited(msg)         { return r }
+
         if let r = parseFederalBankReceived(msg)         { return r }
+        if let r = parseFederalBankSent(msg)             { return r }
         if let r = parseHDFCCreditCardTxn(msg)           { return r }
         if let r = parseHDFCCreditCardSpent(msg)         { return r }
         if let r = parseICICICreditCard(msg)             { return r }
@@ -112,6 +114,31 @@ final class SMSParser {
             last4: r[2],
             date: date,
             upiRef: nil,
+            bankRef: nil,
+            rawText: msg
+        )
+    }
+
+    // MARK: - Federal Bank Sent — "Rs X sent via UPI on DD-MM-YYYY at HH:MM:SS to MERCHANT.Ref:NNN... -Federal Bank"
+
+    private func parseFederalBankSent(_ msg: String) -> ParsedSMSResult? {
+        let pattern = #"(?is)Rs\.?\s*([\d,]+(?:\.\d+)?)\s+sent\s+via\s+UPI\s+on\s+(\d{2}-\d{2}-\d{4})\s+at\s+(\d{2}:\d{2}:\d{2})\s+to\s+([^.\n]+?)\s*\.\s*Ref:?\s*(\d+).*?Federal\s*Bank"#
+        guard let r = match(pattern, in: msg) else { return nil }
+        guard let amount = parseAmount(r[1]) else { return nil }
+        // Compose datetime so we keep the time instead of defaulting to 00:00.
+        let dt = "\(r[2]) \(r[3])"
+        let date = parseDate(dt, formats: ["dd-MM-yyyy HH:mm:ss"]) ?? parseDate(r[2], formats: ["dd-MM-yyyy"])
+        // Collapse double spaces / trailing punctuation in merchant.
+        let merchant = r[4]
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return ParsedSMSResult(
+            amount: amount,
+            type: .debit,
+            merchantRaw: merchant,
+            last4: nil,                  // sender SMS doesn't expose A/c number
+            date: date,
+            upiRef: r[5],
             bankRef: nil,
             rawText: msg
         )
