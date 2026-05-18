@@ -727,22 +727,14 @@ struct SMSImportView: View {
             accounts: container.accountRepo.fetchAll()
         )
 
-        // If we couldn't link an account, OR the classifier is uncertain,
-        // bail out of silent auto-save and fall back to the editable card so
-        // the user can pick the right account/category/tags before confirming.
-        if autoAccount == nil || classification.confidence < 0.85 {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                parsedResult = result
-                classifiedResult = classification
-                editMerchant = merchant.isEmpty ? result.merchantRaw : merchant
-                editCategorySlug = classification.categorySlug
-                editAmountString = "\(result.amount)"
-                editType = result.type
-                editAccountId = autoAccount?.id
-                autoState = .needsConfirm
-            }
-            return
-        }
+        // Auto-save unconditionally — the whole point of the Shortcut/URL flow
+        // is fire-and-forget. Account-not-linked and low-confidence rows just
+        // land in the feed (and show up in Quick Review if confidence is low),
+        // they don't block the auto-import.
+        //
+        // confidence is used as-is so the review banner picks up uncertain rows.
+        // isConfirmed mirrors that — true only when ≥ 0.85, so user fixes via
+        // Quick Review when needed.
 
         let entity = TransactionEntity(
             amount: result.amount,
@@ -753,7 +745,7 @@ struct SMSImportView: View {
             date: result.date ?? Date(),
             source: .sms,
             confidence: classification.confidence,
-            isConfirmed: true,
+            isConfirmed: classification.confidence >= 0.85,
             accountId: autoAccount?.id,
             upiRef: result.upiRef,
             bankRef: result.bankRef,
