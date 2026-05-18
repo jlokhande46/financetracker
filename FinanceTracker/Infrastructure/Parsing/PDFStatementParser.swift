@@ -423,10 +423,10 @@ final class PDFStatementParser {
         // Match amounts only when they're clearly amounts:
         //   (a) comma-separated numbers with optional decimal: 1,000 or 1,000.00
         //   (b) decimal-only numbers: 100.00, 100.5
-        // We deliberately do NOT match bare 4-digit integers because that would gobble
-        // years out of dates (e.g. "07/05/2026" → 2026), breaking the date-before-amount
-        // guard in parseTransactionLine and silently dropping every row.
-        let pattern = #"((?:\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2}))\s*(Cr|Dr|CR|DR)?"#
+        // We deliberately do NOT match bare 4-digit integers (would capture years like 2026)
+        // and do NOT allow space as a thousands separator — PDFKit column spacing produces
+        // patterns like "2 026.00" from the year 2026, which would otherwise be misread as ₹2,026.
+        let pattern = #"((?:\d{1,3}(?:[,]\d{3})+(?:\.\d{1,2})?)|(?:\d{1,5}\.\d{1,2}))\s*(Cr|Dr|CR|DR)?"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
 
         let range = NSRange(line.startIndex..., in: line)
