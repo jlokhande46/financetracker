@@ -284,7 +284,7 @@ final class PDFStatementParser {
         guard !isJunkNarration(narration) else { return nil }
 
         // Determine debit/credit (with how-confident-we-are-about-direction)
-        let inferred = inferAmountAndType(amounts: amounts, line: line)
+        let inferred = inferAmountAndType(amounts: amounts, line: line, bank: bank)
         guard inferred.amount > 0 else { return nil }
 
         let normalizedMerchant = normalizer.normalize(narration)
@@ -462,7 +462,7 @@ final class PDFStatementParser {
         let directionConfidence: Double  // 0.0 – 1.0
     }
 
-    private func inferAmountAndType(amounts: [AmountMatch], line: String) -> InferenceResult {
+    private func inferAmountAndType(amounts: [AmountMatch], line: String, bank: String? = nil) -> InferenceResult {
         guard !amounts.isEmpty else {
             return InferenceResult(amount: 0, type: .debit, directionConfidence: 0)
         }
@@ -551,9 +551,13 @@ final class PDFStatementParser {
             return InferenceResult(amount: chosen.value, type: .credit, directionConfidence: 0.8)
         }
 
-        // 6. Default — debit, but with low directionConfidence so the row needs review.
+        // 6. Default — debit.
+        // On HDFC CC statements the '+' rule is exhaustive: credits always show '+ C amount'
+        // (green in the PDF). Reaching this step without a '+' match means it is definitively
+        // a debit, so we can use high confidence. Other formats lack that guarantee.
         let chosen = firstNonZero(in: nonBalance) ?? amounts[0]
-        return InferenceResult(amount: chosen.value, type: .debit, directionConfidence: 0.4)
+        let debitConfidence: Double = bank == "HDFC" ? 0.85 : 0.4
+        return InferenceResult(amount: chosen.value, type: .debit, directionConfidence: debitConfidence)
     }
 
     private func firstNonZero<S: Sequence>(in amounts: S) -> AmountMatch? where S.Element == AmountMatch {
