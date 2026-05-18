@@ -105,7 +105,9 @@ class AppContainer {
     }
 
     /// Permanently delete every transaction, account, budget, merchant rule, and statement.
-    /// Also flips a flag so sample data won't re-seed on next launch.
+    /// Also flips a flag so sample transactions won't re-seed on next launch.
+    /// Accounts are immediately re-synced so the user isn't left with an empty
+    /// account picker — they represent the user's real cards, not test data.
     func clearAllData() {
         transactionRepo.deleteAll()
         accountRepo.deleteAll()
@@ -115,6 +117,9 @@ class AppContainer {
         MerchantRuleStore.shared.deleteAll()
         NotificationManager.shared.cancelAll()
         UserDefaults.standard.set(true, forKey: "seedDisabled")
+        // Re-seed user's real cards immediately. clearAllData should reset the
+        // app's learned state, NOT remove the user's bank accounts.
+        accountRepo.syncUserCards()
     }
 }
 

@@ -289,6 +289,22 @@ struct DeveloperOptionsView: View {
                     Divider().background(Color.textTertiary.opacity(0.15)).padding(.leading, 56)
                 }
                 actionRow(
+                    icon: "creditcard.fill",
+                    color: Color.brandPrimary,
+                    label: "Restore default cards",
+                    sub: "Re-create HDFC, ICICI, SBI, Federal accounts if missing"
+                ) {
+                    guard let container else { return }
+                    let before = container.accountRepo.fetchAll().count
+                    container.accountRepo.syncUserCards()
+                    let after = container.accountRepo.fetchAll().count
+                    let added = after - before
+                    toast(added > 0
+                          ? "Restored \(added) account\(added == 1 ? "" : "s")"
+                          : "All default accounts already present")
+                }
+                Divider().background(Color.textTertiary.opacity(0.15)).padding(.leading, 56)
+                actionRow(
                     icon: "link.badge.plus",
                     color: Color.brandAccent,
                     label: "Re-link orphan transactions",

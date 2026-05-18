@@ -181,13 +181,32 @@ struct PDFImportConfirmSheet: View {
                 .padding(.top, Spacing.xs)
 
             if availableAccounts.isEmpty {
-                Text("No accounts found. Add one in Profile → Re-link or restart the app.")
-                    .font(.caption)
-                    .foregroundStyle(Color.warningAmber)
-                    .padding(Spacing.base)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.warningAmber.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text("No accounts on this device. Tap below to restore your default cards (HDFC, ICICI, SBI, Federal).")
+                        .font(.caption)
+                        .foregroundStyle(Color.warningAmber)
+                    Button {
+                        container?.accountRepo.syncUserCards()
+                        // Force re-evaluation by refreshing selection state
+                        selectedAccountId = suggestedAccount?.id
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                            Text("Restore default cards")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Spacing.md)
+                        .padding(.vertical, Spacing.sm)
+                        .background(Color.brandPrimary)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(Spacing.base)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.warningAmber.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: Spacing.sm) {
