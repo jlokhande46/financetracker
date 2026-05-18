@@ -185,7 +185,7 @@ final class AnalyticsViewModel {
     }
 
     private func isTransfer(_ slug: String) -> Bool {
-        ["transfer", "internal-transfer", "credit-card-payment"].contains(slug)
+        ["transfer", "cc_payment"].contains(slug)
     }
 
     private func isSubscriptionCategory(_ slug: String) -> Bool {

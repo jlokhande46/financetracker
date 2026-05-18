@@ -54,7 +54,7 @@ final class BudgetsViewModel {
         defer { isLoading = false }
 
         budgets = budgetRepo.fetchAll()
-        transactions = transactionRepo.fetchForMonth(Date())
+        transactions = transactionRepo.fetchAll()
 
         // Fire alerts for any budget that crossed 80 % or 100 % this period.
         NotificationManager.shared.scheduleBudgetAlerts(budgetsWithSpend)

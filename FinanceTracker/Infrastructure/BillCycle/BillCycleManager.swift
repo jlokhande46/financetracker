@@ -127,9 +127,8 @@ final class BillCycleManager {
         comps.day = day
         let thisMonth = calendar.date(from: comps) ?? reference
         if thisMonth <= reference { return thisMonth }
-        // Otherwise step back one month
-        comps.month = (comps.month ?? 1) - 1
-        return calendar.date(from: comps) ?? reference
+        // Step back one month using Calendar arithmetic to handle Jan → Dec wraparound
+        return calendar.date(byAdding: .month, value: -1, to: thisMonth) ?? reference
     }
 
     /// The next occurrence of `day` strictly after `reference`.
@@ -138,7 +137,7 @@ final class BillCycleManager {
         comps.day = day
         let thisMonth = calendar.date(from: comps) ?? reference
         if thisMonth > reference { return thisMonth }
-        comps.month = (comps.month ?? 1) + 1
-        return calendar.date(from: comps) ?? reference
+        // Step forward one month using Calendar arithmetic to handle Dec → Jan wraparound
+        return calendar.date(byAdding: .month, value: 1, to: thisMonth) ?? reference
     }
 }

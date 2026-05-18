@@ -123,7 +123,7 @@ final class SMSParser {
         let pattern = #"(?is)Txn\s+Rs\.?\s*([\d,]+(?:\.\d+)?)\s*On\s+HDFC\s+Bank\s+Card\s+(\d{4})\s*At\s+([^\n]+?)\s*by\s+UPI\s+(\d+)\s*On\s+(\d{2}-\d{2}(?:-\d{2,4})?)"#
         guard let r = match(pattern, in: msg) else { return nil }
         guard let amount = parseAmount(r[1]) else { return nil }
-        let date = parseDate(r[5], formats: ["dd-MM-yyyy", "dd-MM-yy"]) ?? fillCurrentYear(r[5])
+        let date = parseDate(r[5], formats: ["dd-MM-yyyy", "dd-MM-yy"]) ?? (r[5].count <= 5 ? fillCurrentYear(r[5]) : nil)
         return ParsedSMSResult(
             amount: amount,
             type: .debit,

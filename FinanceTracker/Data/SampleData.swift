@@ -15,7 +15,7 @@ struct SampleData {
         let now = Date()
 
         func daysAgo(_ n: Int) -> Date {
-            cal.date(byAdding: .day, value: -n, to: now)!
+            cal.date(byAdding: .day, value: -n, to: now) ?? now
         }
 
         return [

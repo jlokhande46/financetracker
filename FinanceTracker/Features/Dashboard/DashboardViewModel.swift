@@ -385,7 +385,7 @@ final class DashboardViewModel {
     // MARK: - Helpers
 
     private func isTransferCategory(_ slug: String) -> Bool {
-        ["transfer", "internal-transfer", "credit-card-payment"].contains(slug)
+        ["transfer", "cc_payment"].contains(slug)
     }
 
     private func isSubscriptionCategory(_ slug: String) -> Bool {

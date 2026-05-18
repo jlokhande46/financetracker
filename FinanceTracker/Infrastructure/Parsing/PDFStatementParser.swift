@@ -269,7 +269,7 @@ final class PDFStatementParser {
 
         // The narration sits between the date and the first amount
         let lineNS = line as NSString
-        let amountStart = amounts.first!.range.location
+        let amountStart = amounts[0].range.location
         guard dateEnd < amountStart else { return nil }
 
         let narrationLength = amountStart - dateEnd
@@ -464,23 +464,29 @@ final class PDFStatementParser {
             return InferenceResult(amount: 0, type: .debit, directionConfidence: 0)
         }
 
-        // 1. ICICI CC — explicit Cr/Dr suffix on the amount (regex-bound, very reliable)
-        if let cr = amounts.first(where: { $0.hasCRSuffix }) {
-            return InferenceResult(amount: cr.value, type: .credit, directionConfidence: 1.0)
-        }
-        if let dr = amounts.first(where: { $0.hasDRSuffix }) {
-            return InferenceResult(amount: dr.value, type: .debit, directionConfidence: 1.0)
+        // 1. Explicit Cr/Dr suffix on the amount — most reliable, BUT only trust it
+        //    when there are ≤3 amounts on the row. Federal-style savings statements
+        //    show 4 amounts per row (withdrawal, deposit, balance, with CR on the
+        //    balance) — there the CR refers to balance state, not transaction
+        //    direction. Column detection in step 4 handles that case correctly.
+        if amounts.count <= 3 {
+            if let cr = amounts.first(where: { $0.hasCRSuffix }) {
+                return InferenceResult(amount: cr.value, type: .credit, directionConfidence: 1.0)
+            }
+            if let dr = amounts.first(where: { $0.hasDRSuffix }) {
+                return InferenceResult(amount: dr.value, type: .debit, directionConfidence: 1.0)
+            }
         }
 
         // 2. SBI CC — last non-space char on the row is 'C' (credit) or 'D' (debit)
         let trimmedLine = line.trimmingCharacters(in: .whitespaces)
         if trimmedLine.hasSuffix(" C") || trimmedLine.hasSuffix("\tC") {
-            let chosen = firstNonZero(in: amounts.dropLast()) ?? amounts.first
-            return InferenceResult(amount: chosen?.value ?? 0, type: .credit, directionConfidence: 1.0)
+            let chosen = firstNonZero(in: amounts.dropLast()) ?? amounts[0]
+            return InferenceResult(amount: chosen.value, type: .credit, directionConfidence: 1.0)
         }
         if trimmedLine.hasSuffix(" D") || trimmedLine.hasSuffix("\tD") {
-            let chosen = firstNonZero(in: amounts.dropLast()) ?? amounts.first
-            return InferenceResult(amount: chosen?.value ?? 0, type: .debit, directionConfidence: 1.0)
+            let chosen = firstNonZero(in: amounts.dropLast()) ?? amounts[0]
+            return InferenceResult(amount: chosen.value, type: .debit, directionConfidence: 1.0)
         }
 
         // 3. HDFC CC (Tata Neu / Regalia) — '+' sign appears before the amount, sometimes
@@ -528,21 +534,21 @@ final class PDFStatementParser {
             "credit card payment", "bill payment received"
         ]
         if ccPaymentKeywords.contains(where: { lower.contains($0) }) {
-            let chosen = firstNonZero(in: nonBalance) ?? amounts.first
-            return InferenceResult(amount: chosen?.value ?? 0, type: .credit, directionConfidence: 1.0)
+            let chosen = firstNonZero(in: nonBalance) ?? amounts[0]
+            return InferenceResult(amount: chosen.value, type: .credit, directionConfidence: 1.0)
         }
         let strictCreditKeywords = ["salary credit", "salary credited",
                                     "refund", "cashback", "reversal", "interest credit",
                                     "imps in/", "neft in/", "rtgs in/", "by transfer-",
                                     "credited by"]
         if strictCreditKeywords.contains(where: { lower.contains($0) }) {
-            let chosen = firstNonZero(in: nonBalance) ?? amounts.first
-            return InferenceResult(amount: chosen?.value ?? 0, type: .credit, directionConfidence: 0.8)
+            let chosen = firstNonZero(in: nonBalance) ?? amounts[0]
+            return InferenceResult(amount: chosen.value, type: .credit, directionConfidence: 0.8)
         }
 
         // 6. Default — debit, but with low directionConfidence so the row needs review.
-        let chosen = firstNonZero(in: nonBalance) ?? amounts.first
-        return InferenceResult(amount: chosen?.value ?? 0, type: .debit, directionConfidence: 0.4)
+        let chosen = firstNonZero(in: nonBalance) ?? amounts[0]
+        return InferenceResult(amount: chosen.value, type: .debit, directionConfidence: 0.4)
     }
 
     private func firstNonZero<S: Sequence>(in amounts: S) -> AmountMatch? where S.Element == AmountMatch {
