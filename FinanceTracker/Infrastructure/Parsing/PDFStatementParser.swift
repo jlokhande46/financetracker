@@ -468,8 +468,13 @@ final class PDFStatementParser {
     /// A "record" is a transaction's text — possibly spanning multiple PDFKit
     /// output lines. A new record begins at any line that starts with a date.
     private func groupLinesIntoRecords(_ lines: [String]) -> [String] {
+        // Accept any of:
+        //   "07/05/2026"  (HDFC, ICICI, Federal)
+        //   "07-05-2026"  (HDFC SMS-derived)
+        //   "07 May 26" / "07 May 2026"  (SBI Cashback)
+        //   "07-May-2026"  (some statements)
         guard let regex = try? NSRegularExpression(
-            pattern: #"^\d{1,2}[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}\b"#
+            pattern: #"^(?:\d{1,2}[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})\b"#
         ) else { return lines }
 
         var records: [String] = []
@@ -496,7 +501,9 @@ final class PDFStatementParser {
     /// first (HDFC Savings symptom). We can't recover from this without
     /// coordinate-aware extraction; bail rather than emit garbage rows.
     private func recordsAppearColumnScrambled(_ records: [String]) -> Bool {
-        let dateRegex = try? NSRegularExpression(pattern: #"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"#)
+        let dateRegex = try? NSRegularExpression(
+            pattern: #"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}"#
+        )
         let amountRegex = try? NSRegularExpression(pattern: #"\d{1,3}(?:[,\s]\d{3})*\.\d{2}"#)
         var scrambledCount = 0
         var candidateCount = 0
