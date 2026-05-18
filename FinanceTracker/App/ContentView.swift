@@ -54,6 +54,13 @@ struct ContentView: View {
                 selectedTab = .transactions
             }
         }
+        .onAppear {
+            // Cold-launch: deep link may have set pendingSMSText before this
+            // view mounted, in which case .onChange will not fire.
+            if deepLink.pendingSMSText?.isEmpty == false {
+                selectedTab = .transactions
+            }
+        }
         .task {
             guard let c = container, dashboardVM == nil else { return }
 

@@ -93,6 +93,14 @@ struct TransactionFeedView: View {
             .onChange(of: deepLink.pendingSMSText) { _, text in
                 if text != nil { showSMSImport = true }
             }
+            .onAppear {
+                // Cold-launch race: if a deep-link arrived BEFORE this view
+                // mounted, .onChange will not fire. Check the singleton on
+                // first appearance and present the sheet ourselves.
+                if deepLink.pendingSMSText?.isEmpty == false {
+                    showSMSImport = true
+                }
+            }
             .searchable(text: $viewModel.searchText, prompt: "Search transactions, merchants...")
             .refreshable {
                 await viewModel.load()

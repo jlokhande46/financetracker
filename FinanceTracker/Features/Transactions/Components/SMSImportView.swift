@@ -6,6 +6,19 @@ struct SMSImportView: View {
 
     var initialSMS: String? = nil
 
+    /// True when the sheet was launched from a deep link / Shortcut and should
+    /// auto-parse without user interaction. Seeded at init time from either the
+    /// parent-supplied `initialSMS` or — as a cold-launch fallback — directly
+    /// from `DeepLinkHandler.shared.pendingSMSText`, because `.onChange` in the
+    /// parent does not fire for values set before the listener mounts.
+    @State private var isAutoMode: Bool
+
+    init(initialSMS: String? = nil) {
+        self.initialSMS = initialSMS
+        let pending = initialSMS ?? DeepLinkHandler.shared.pendingSMSText
+        self._isAutoMode = State(initialValue: (pending?.isEmpty == false))
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appContainer) private var container
     @FocusState private var isInputFocused: Bool
@@ -65,8 +78,6 @@ struct SMSImportView: View {
             : CategoryEntity.system.filter { !$0.isIncome && !$0.isTransfer }
     }
 
-    private var isAutoMode: Bool { initialSMS != nil }
-
     // MARK: - Body
 
     var body: some View {
@@ -119,7 +130,12 @@ struct SMSImportView: View {
                 }
             }
             .task {
-                guard let initial = initialSMS, !initial.isEmpty else { return }
+                // Take initialSMS if the parent passed it; otherwise fall back to
+                // reading directly from the singleton. This protects against the
+                // sheet rendering with a nil initialSMS due to onChange firing
+                // before the content closure captured the latest pendingSMSText.
+                let candidate = initialSMS ?? DeepLinkHandler.shared.pendingSMSText
+                guard let initial = candidate, !initial.isEmpty else { return }
                 smsText = initial
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 autoParseAndSave(initial)
