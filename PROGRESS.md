@@ -101,6 +101,35 @@ maps each one to where it lives so reviewers can audit fast.
 
 ## Change log
 
+### 2026-05-18 — PR #2 useful-bits cherry-pick
+PR #2 was stale (would have deleted the `FinanceTracker.entitlements`
+file backing PF-1 App Groups) and was closed unmerged. The 4 still-useful
+fixes were applied directly:
+
+- [BillCycleManager.swift:125](FinanceTracker/Infrastructure/BillCycle/BillCycleManager.swift)
+  — `mostRecentDay` / `nextDay` now use `calendar.date(byAdding: .month, …)`
+  so Jan→Dec and Dec→Jan wrap the year correctly (was: `comps.month - 1`
+  which produced an invalid month 0). Strengthens PF-22.
+- [CategoryClassifier.swift:63](FinanceTracker/Infrastructure/Categorization/CategoryClassifier.swift)
+  — removed duplicate `("neft", "salary")` rule; `neft` already maps to
+  `transfer` below.
+- [CategoryEntity.swift:68](FinanceTracker/Domain/Entities/CategoryEntity.swift)
+  — `find(slug:)` no longer force-unwraps `system.last!`; falls back to a
+  constructed Others entity.
+- [SMSParser.swift:153](FinanceTracker/Infrastructure/Parsing/SMSParser.swift)
+  — HDFC CC Tata Neu UPI parser only invokes `fillCurrentYear` for the
+  short DD-MM form; a malformed full DD-MM-YYYY is no longer silently
+  coerced to the current year.
+- [PDFStatementParser.swift:392](FinanceTracker/Infrastructure/Parsing/PDFStatementParser.swift)
+  — removed `amounts.first!` force-unwrap.
+- [PDFStatementParser.swift:591](FinanceTracker/Infrastructure/Parsing/PDFStatementParser.swift)
+  — `igst-` added to `junkSubstrings` so `IGST-VPS...-RATE 18.0` lines
+  no longer produce a spurious ₹18 transaction.
+
+The risky bits from PR #2 (space-thousands-separator removal, HDFC debit
+confidence bump, deleting the entitlements file) were intentionally NOT
+ported — see review notes on the closed PR.
+
 ### 2026-05-18 — SMS auto-mode cold-launch fix
 **Symptom:** URL-scheme deep link from Shortcut opened the app and landed on
 the "Paste SMS" screen with an empty textarea instead of auto-parsing

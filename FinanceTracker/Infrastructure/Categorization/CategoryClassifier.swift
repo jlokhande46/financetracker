@@ -60,7 +60,8 @@ class CategoryClassifier {
         ("mutual fund", "investments"), ("sip", "investments"),
         ("equity", "investments"), ("nse", "investments"),
         // Salary/Income
-        ("salary", "salary"), ("payroll", "salary"), ("neft", "salary"),
+        // "neft" appears below under transfers — don't duplicate it here.
+        ("salary", "salary"), ("payroll", "salary"),
         // Transfers
         ("transfer", "transfer"), ("neft", "transfer"), ("rtgs", "transfer"),
         ("imps", "transfer"), ("phonepe", "transfer"), ("gpay", "transfer"),

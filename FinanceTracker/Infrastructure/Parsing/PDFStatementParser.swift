@@ -389,7 +389,7 @@ final class PDFStatementParser {
             )
         }
 
-        let amountStart = amounts.first!.range.location
+        guard let amountStart = amounts.first?.range.location else { return nil }
         guard dateEnd < amountStart else { return nil }
 
         let narrationLength = amountStart - dateEnd
@@ -589,6 +589,9 @@ final class PDFStatementParser {
         "available credit", "available limit", "credit limit",
         "payment due date", "statement date",
         " gst ", " igst ", " cgst ", " sgst ",
+        // HDFC/ICICI statements embed the GST rate inline as "IGST-VPS...-RATE 18.0";
+        // the rate "18.0" would otherwise be misread as a ₹18 transaction.
+        "igst-",
     ]
 
     private func isJunkNarration(_ narration: String) -> Bool {

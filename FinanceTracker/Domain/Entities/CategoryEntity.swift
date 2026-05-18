@@ -66,6 +66,10 @@ struct CategoryEntity: Identifiable, Equatable {
     )
 
     static func find(slug: String) -> CategoryEntity {
-        bySlug[slug] ?? bySlug["others"] ?? system.last!
+        bySlug[slug] ?? bySlug["others"] ?? CategoryEntity(
+            id: UUID(), name: "Others", slug: "others", icon: "ellipsis.circle",
+            colorHex: "#94A3B8", isIncome: false, isTransfer: false,
+            parentSlug: nil, isSystem: true, sortOrder: 21
+        )
     }
 }
