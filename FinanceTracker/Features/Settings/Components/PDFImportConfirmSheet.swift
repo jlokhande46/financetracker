@@ -13,6 +13,7 @@ struct PDFImportConfirmSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appContainer) private var container
     @State private var selectedAccountId: UUID?
+    @State private var didTrySync: Bool = false
 
     init(parsed: PDFParseResult,
          suggestedAccount: AccountEntity?,
@@ -67,6 +68,20 @@ struct PDFImportConfirmSheet: View {
                         .padding(.top, Spacing.sm)
                     }
                     .padding(Spacing.base)
+                }
+            }
+            .onAppear {
+                // Self-heal: if accounts are missing the first time the sheet
+                // opens, run syncUserCards once. Stops the user from staring at
+                // an empty picker when something has gone wrong upstream.
+                if !didTrySync, availableAccounts.isEmpty {
+                    didTrySync = true
+                    container?.accountRepo.syncUserCards()
+                    // Re-select the suggested account now that accounts exist.
+                    if selectedAccountId == nil {
+                        selectedAccountId = suggestedAccount?.id
+                            ?? availableAccounts.first?.id
+                    }
                 }
             }
             .navigationTitle("Import Statement")
