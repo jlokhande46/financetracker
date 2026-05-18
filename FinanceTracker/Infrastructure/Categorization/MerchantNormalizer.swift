@@ -19,6 +19,17 @@ class MerchantNormalizer {
         "DUNZO": "Dunzo",
         // Restaurants / Dining
         "DISTRICTDININGCYBS": "District Dining", "DISTRICT DINING": "District Dining",
+        "DISTRICTDININGMPGS": "District Dining",
+        "THEOBROMA": "Theobroma", "THEOBROMA FOODS": "Theobroma",
+        "THEOBROMA FOODS PVT": "Theobroma",
+        "JOSHH": "Joshh Cafe",
+        "AMA CAFE": "Ama Cafe",
+        "KAAFE": "Kaafe",
+        // Hotels / Stays
+        "THE HOSTELLER": "The Hosteller", "HOSTELLER": "The Hosteller",
+        "ARCHES BY SALVUS": "Arches By Salvus", "ARCHES BY SALVUSRISHIKESH": "Arches By Salvus",
+        // Lounge access
+        "WWW LOUNGEONE AI": "Lounge One", "LOUNGEONE": "Lounge One",
         // Entertainment / Ticketing
         "BOOKMYSHOW": "BookMyShow", "PAY*BOOKMYSHOW": "BookMyShow",
         "NETFLIX": "Netflix", "NETFLIX.COM": "Netflix",
@@ -34,9 +45,12 @@ class MerchantNormalizer {
         "GOIBIBO": "Goibibo", "CLEARTRIP": "Cleartrip",
         "YATRA": "Yatra",
         // Transport
-        "UBER": "Uber", "UBER INDIA": "Uber",
+        "UBER": "Uber", "UBER INDIA": "Uber", "UBER INDIA SYSTEMS": "Uber",
         "OLA": "Ola", "ANI TECHNOLOGIES": "Ola",
-        "RAPIDO": "Rapido",
+        "RAPIDO": "Rapido", "ROPPEN TRANSPORTATION": "Rapido",
+        "REDBUS": "RedBus", "REDBUS INDIA": "RedBus",
+        "CAS*REDBUS": "RedBus",
+        "RAJKAMAL MOBILITY": "Rajkamal Mobility",
         "DMRC": "Delhi Metro", "BANGALORE METRO": "Metro",
         "BMTC": "BMTC Bus", "IRCTC": "IRCTC", "IRCTC RAIL": "IRCTC",
         // Fuel
@@ -63,6 +77,11 @@ class MerchantNormalizer {
         // Health
         "APOLLO": "Apollo Pharmacy", "MEDPLUS": "MedPlus",
         "PHARMEASY": "PharmEasy", "1MG": "1mg",
+        "CLINICO PET SCAN": "Clinico Pet Scan",
+        // Grocery / Supermarket
+        "JALARAM SUPER MARKET": "Jalaram Supermarket",
+        // BookMyShow
+        "PAYBOOKMYSHOW COM": "BookMyShow", "PAYBOOKMYSHOW": "BookMyShow",
     ]
 
     private let junkWords = ["POS", "INR", "TXN", "PURCHASE", "TRANSACTION", "PAYMENT", "DEBIT"]

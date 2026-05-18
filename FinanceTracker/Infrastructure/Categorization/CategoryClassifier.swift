@@ -15,17 +15,24 @@ class CategoryClassifier {
 
     // Merchant → Category rules (ordered by specificity)
     private let merchantRules: [(merchant: String, slug: String)] = [
-        // Food
+        // Food delivery
         ("swiggy", "food"), ("zomato", "food"), ("blinkit", "food"),
-        ("bigbasket", "food"), ("dunzo", "food"), ("dominos", "food"),
-        ("mcdonalds", "food"), ("kfc", "food"), ("subway", "food"),
-        ("starbucks", "food"), ("cafe", "food"), ("restaurant", "food"),
-        ("pizza", "food"), ("biryani", "food"), ("dhaba", "food"),
+        ("bigbasket", "food"), ("dunzo", "food"), ("zepto", "food"),
+        // Dining
+        ("dominos", "dining"), ("mcdonalds", "dining"), ("kfc", "dining"),
+        ("subway", "dining"), ("starbucks", "dining"), ("pizza", "dining"),
+        ("theobroma", "dining"), ("district dining", "dining"),
+        ("joshh", "dining"), ("ama cafe", "dining"), ("kaafe", "dining"),
+        ("cafe", "dining"), ("restaurant", "dining"), ("biryani", "dining"),
+        ("dhaba", "dining"), ("wines", "dining"),
         // Travel
         ("uber", "travel"), ("ola", "travel"), ("rapido", "travel"),
+        ("roppen transportation", "travel"),
         ("irctc", "travel"), ("makemytrip", "travel"), ("goibibo", "travel"),
+        ("redbus", "travel"), ("yatra", "travel"), ("cleartrip", "travel"),
         ("metro", "travel"), ("dmrc", "travel"), ("bmtc", "travel"),
-        ("yatra", "travel"), ("cleartrip", "travel"), ("redbus", "travel"),
+        ("lounge one", "travel"), ("loungeone", "travel"),
+        ("hosteller", "travel"), ("arches by salvus", "travel"),
         // Fuel
         ("bpcl", "fuel"), ("hpcl", "fuel"), ("indian oil", "fuel"),
         ("iocl", "fuel"), ("petrol", "fuel"), ("diesel", "fuel"),
@@ -49,6 +56,7 @@ class CategoryClassifier {
         // Health
         ("apollo", "health"), ("medplus", "health"), ("pharmeasy", "health"),
         ("1mg", "health"), ("netmeds", "health"), ("hospital", "health"),
+        ("clinico", "health"), ("pet scan", "health"),
         ("clinic", "health"), ("pharmacy", "health"), ("doctor", "health"),
         // Subscriptions
         ("notion", "subscriptions"), ("dropbox", "subscriptions"),
