@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var showToast: Bool = false
     @State private var toastType: ToastType = .success
     @State private var pendingImport: PDFImportPayload? = nil
+    @State private var showDeveloperOptions: Bool = false
 
     /// Held in @State between parse and user confirmation. Carries the parsed
     /// result + the suggested account so the sheet can pre-fill.
@@ -72,6 +73,11 @@ struct SettingsView: View {
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showDeveloperOptions) {
+            DeveloperOptionsView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .alert("Clear All Data", isPresented: $showClearDataAlert) {
             Button("Cancel", role: .cancel) {}
@@ -292,12 +298,12 @@ struct SettingsView: View {
                 Divider().background(Color.bgElevated)
 
                 SettingsRow(
-                    icon: "link.circle.fill",
+                    icon: "hammer.fill",
                     iconColor: .brandAccent,
-                    title: "Re-link Orphan Transactions",
-                    subtitle: "Match unlinked rows to accounts by SMS / PDF content"
+                    title: "Developer Options",
+                    subtitle: "Edit learned rules · diagnostics · re-link orphans"
                 ) {
-                    relinkOrphans()
+                    showDeveloperOptions = true
                 }
 
                 Divider().background(Color.bgElevated)

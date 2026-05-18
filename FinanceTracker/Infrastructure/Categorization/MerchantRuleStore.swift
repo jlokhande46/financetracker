@@ -100,6 +100,51 @@ final class MerchantRuleStore {
         return rules.map { ($0.id, $0.merchantDisplay, $0.categorySlug, $0.matchCount) }
     }
 
+    /// Richer snapshot used by Developer Options. Includes the normalised key
+    /// (the actual lookup string), display name (user-edited), category slug,
+    /// match count, and timestamps.
+    struct RuleSnapshot: Identifiable, Hashable {
+        let id: UUID
+        let merchantKey: String
+        let merchantDisplay: String
+        let categorySlug: String
+        let matchCount: Int
+        let createdAt: Date
+        let updatedAt: Date
+    }
+
+    func snapshots() -> [RuleSnapshot] {
+        guard let context = modelContext else { return [] }
+        let descriptor = FetchDescriptor<MerchantRuleModel>(
+            sortBy: [SortDescriptor(\.matchCount, order: .reverse)]
+        )
+        guard let rules = try? context.fetch(descriptor) else { return [] }
+        return rules.map {
+            RuleSnapshot(
+                id: $0.id,
+                merchantKey: $0.merchantKey,
+                merchantDisplay: $0.merchantDisplay,
+                categorySlug: $0.categorySlug,
+                matchCount: $0.matchCount,
+                createdAt: $0.createdAt,
+                updatedAt: $0.updatedAt
+            )
+        }
+    }
+
+    /// Update a rule in place. Pass nil for any field you don't want to change.
+    func updateRule(id: UUID, categorySlug: String? = nil, displayName: String? = nil) {
+        guard let context = modelContext else { return }
+        let descriptor = FetchDescriptor<MerchantRuleModel>(
+            predicate: #Predicate { $0.id == id }
+        )
+        guard let rule = try? context.fetch(descriptor).first else { return }
+        if let categorySlug { rule.categorySlug = categorySlug }
+        if let displayName, !displayName.isEmpty { rule.merchantDisplay = displayName }
+        rule.updatedAt = Date()
+        try? context.save()
+    }
+
     func deleteAll() {
         guard let context = modelContext else { return }
         guard let rules = try? context.fetch(FetchDescriptor<MerchantRuleModel>()) else { return }
