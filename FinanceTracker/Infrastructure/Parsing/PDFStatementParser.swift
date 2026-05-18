@@ -396,6 +396,9 @@ final class PDFStatementParser {
         "available credit", "available limit", "credit limit",
         "payment due date", "statement date",
         " gst ", " igst ", " cgst ", " sgst ",
+        // HDFC/ICICI statements embed the GST rate in the narration as "IGST-VPS...-RATE 18.0".
+        // The "18.0" (the rate %) is mistaken for an amount; filter the whole line.
+        "igst-",
     ]
 
     private func isJunkNarration(_ narration: String) -> Bool {
@@ -491,11 +494,13 @@ final class PDFStatementParser {
 
         // 3. HDFC CC (Tata Neu / Regalia) — '+' sign appears before the amount, sometimes
         // separated by currency markers ("₹", "Rs.", "INR") and/or whitespace.
+        // PDFKit renders ₹ as the letter "C" on HDFC statements, so "C" is also accepted here.
+        // NeuCoins lines like "+ 4 C 295.00" don't match because "4" sits between + and C.
         // Match: + followed by only whitespace / currency until end-of-segment.
         if let first = amounts.first {
             let lineNS = line as NSString
             let beforeAmount = lineNS.substring(to: first.range.location)
-            let beforePattern = #"\+\s*(?:₹|Rs\.?|INR)?\s*$"#
+            let beforePattern = #"\+\s*(?:₹|C|Rs\.?|INR)?\s*$"#
             if beforeAmount.range(of: beforePattern, options: .regularExpression) != nil {
                 return InferenceResult(amount: first.value, type: .credit, directionConfidence: 1.0)
             }
