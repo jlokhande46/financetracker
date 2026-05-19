@@ -4,19 +4,15 @@ import SwiftUI
 
 struct SMSImportView: View {
 
-    var initialSMS: String? = nil
+    let initialSMS: String?
 
-    /// True when the sheet was launched from a deep link / Shortcut and should
-    /// auto-parse without user interaction. Seeded at init time from either the
-    /// parent-supplied `initialSMS` or — as a cold-launch fallback — directly
-    /// from `DeepLinkHandler.shared.pendingSMSText`, because `.onChange` in the
-    /// parent does not fire for values set before the listener mounts.
+    /// True when the sheet was opened with a pre-filled SMS (e.g. from the manual
+    /// import button with a pre-supplied text). Auto-parses and saves without user interaction.
     @State private var isAutoMode: Bool
 
     init(initialSMS: String? = nil) {
         self.initialSMS = initialSMS
-        let pending = initialSMS ?? DeepLinkHandler.shared.pendingSMSText
-        self._isAutoMode = State(initialValue: (pending?.isEmpty == false))
+        self._isAutoMode = State(initialValue: (initialSMS?.isEmpty == false))
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -130,12 +126,7 @@ struct SMSImportView: View {
                 }
             }
             .task {
-                // Take initialSMS if the parent passed it; otherwise fall back to
-                // reading directly from the singleton. This protects against the
-                // sheet rendering with a nil initialSMS due to onChange firing
-                // before the content closure captured the latest pendingSMSText.
-                let candidate = initialSMS ?? DeepLinkHandler.shared.pendingSMSText
-                guard let initial = candidate, !initial.isEmpty else { return }
+                guard let initial = initialSMS, !initial.isEmpty else { return }
                 smsText = initial
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 autoParseAndSave(initial)
@@ -228,9 +219,8 @@ struct SMSImportView: View {
                         .padding(.horizontal, Spacing.xl)
 
                     Button("Add Manually") {
+                        isAutoMode = false
                         autoState = .idle
-                        // Switch to manual mode by clearing initialSMS effect
-                        // (view stays open, user can type)
                     }
                     .font(.bodyMedium)
                     .foregroundStyle(Color.brandPrimary)

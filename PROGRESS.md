@@ -33,12 +33,12 @@ All 30 items in PRIMARY_FEATURES.md are implemented on `main`. The list below
 maps each one to where it lives so reviewers can audit fast.
 
 ### Capture (PF-1 … PF-6) — ✅
-- **PF-1** SMS via App Intent: [LogBankSMSIntent.swift](FinanceTracker/App/Intents/LogBankSMSIntent.swift),
-  drained by `AppContainer.processPendingSMS()` on foreground.
+- **PF-1** SMS via App Intent: [LogBankSMSIntent.swift](FinanceTracker/Infrastructure/AppIntent/LogBankSMSIntent.swift)
+  (`openAppWhenRun = false`) — queues in `PendingSMSStore`, drained silently by
+  `AppContainer.processPendingSMS()` on next foreground. No UI shown.
 - **PF-2** SMS via URL scheme: [DeepLinkHandler.swift](FinanceTracker/App/DeepLinkHandler.swift)
-  → [TransactionFeedView.swift](FinanceTracker/Features/Transactions/TransactionFeedView.swift)
-  → [SMSImportView.swift](FinanceTracker/Features/Transactions/Components/SMSImportView.swift)
-  auto-mode. Cold-launch race fixed 2026-05-18 (see change log).
+  now enqueues to `PendingSMSStore` (same path as PF-1) instead of opening the paste
+  sheet. Both paths are zero-UI: transaction appears silently the next time the app is active.
 - **PF-3** Bank SMS parsers: [SMSParser.swift](FinanceTracker/Infrastructure/Parsing/SMSParser.swift)
   — all 8 patterns round-trip.
 - **PF-4** Manual Add: [AddTransactionView.swift](FinanceTracker/Features/Transactions/Components/AddTransactionView.swift).
@@ -100,6 +100,35 @@ maps each one to where it lives so reviewers can audit fast.
 ---
 
 ## Change log
+
+### 2026-05-19 — Silent background SMS automation (no paste page)
+**Symptom:** Shortcuts automation opened the app to the "Paste SMS" page
+instead of saving the transaction silently. Strengthens PF-1 and PF-2.
+
+**Root cause:** `DeepLinkHandler.handle()` was setting `pendingSMSText`,
+which triggered the `SMSImportView` sheet in `TransactionFeedView`. Even
+in "auto-mode", the sheet was visible to the user.
+
+**Fix:**
+- `DeepLinkHandler.handle()` now calls `PendingSMSStore.enqueue()` instead
+  of setting `pendingSMSText`. Both the URL-scheme and App Intent paths now
+  use the same queue.
+- `FinanceTrackerApp.onOpenURL` calls `processPendingSMS()` immediately when
+  the URL arrives (in case the app was already active and scenePhase won't
+  re-fire).
+- Removed `deepLink.pendingSMSText` from `ContentView`, `TransactionFeedView`,
+  and `SMSImportView` — the paste sheet is now manual-only (FAB button).
+- Result: regardless of whether the Shortcut uses the URL scheme or the
+  `Log Bank SMS` App Intent, the transaction is saved silently. No SMS page,
+  no user involvement.
+
+**Shortcut setup for zero-UI background processing (recommended):**
+1. Open Shortcuts → tap "+" → search "Log Bank SMS"
+2. Set the SMS parameter to "Shortcut Input"
+3. Remove any "Open URL" / URL-encode steps
+4. Assign to your bank SMS automation (trigger by sender: HDFCBK, SBICRD, etc.)
+The transaction will be in the app the next time you open it — no app launch,
+no paste page, no prompts.
 
 ### 2026-05-18 — PR #2 useful-bits cherry-pick
 PR #2 was stale (would have deleted the `FinanceTracker.entitlements`

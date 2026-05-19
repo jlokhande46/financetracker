@@ -10,8 +10,6 @@ struct TransactionFeedView: View {
     @State private var showBulkToast: Bool = false
     @State private var bulkToastMessage: String = ""
 
-    private var deepLink: DeepLinkHandler { DeepLinkHandler.shared }
-
     init(transactionRepo: TransactionRepositoryImpl, accountRepo: AccountRepositoryImpl? = nil) {
         self._viewModel = State(initialValue: TransactionListViewModel(transactionRepo: transactionRepo, accountRepo: accountRepo))
     }
@@ -84,22 +82,10 @@ struct TransactionFeedView: View {
                 }
             }
             .sheet(isPresented: $showSMSImport) {
-                SMSImportView(initialSMS: deepLink.pendingSMSText)
+                SMSImportView()
                     .onDisappear {
-                        deepLink.pendingSMSText = nil
                         Task { await viewModel.load() }
                     }
-            }
-            .onChange(of: deepLink.pendingSMSText) { _, text in
-                if text != nil { showSMSImport = true }
-            }
-            .onAppear {
-                // Cold-launch race: if a deep-link arrived BEFORE this view
-                // mounted, .onChange will not fire. Check the singleton on
-                // first appearance and present the sheet ourselves.
-                if deepLink.pendingSMSText?.isEmpty == false {
-                    showSMSImport = true
-                }
             }
             .searchable(text: $viewModel.searchText, prompt: "Search transactions, merchants...")
             .refreshable {
