@@ -4,7 +4,7 @@ import SwiftUI
 
 struct SMSImportView: View {
 
-    var initialSMS: String? = nil
+    let initialSMS: String?
 
     /// True when the sheet was opened with a pre-filled SMS (e.g. from the manual
     /// import button with a pre-supplied text). Auto-parses and saves without user interaction.
@@ -219,9 +219,8 @@ struct SMSImportView: View {
                         .padding(.horizontal, Spacing.xl)
 
                     Button("Add Manually") {
+                        isAutoMode = false
                         autoState = .idle
-                        // Switch to manual mode by clearing initialSMS effect
-                        // (view stays open, user can type)
                     }
                     .font(.bodyMedium)
                     .foregroundStyle(Color.brandPrimary)

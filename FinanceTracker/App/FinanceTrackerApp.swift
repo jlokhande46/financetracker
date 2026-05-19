@@ -84,9 +84,12 @@ struct FinanceTrackerApp: App {
                     }
                     .onOpenURL { url in
                         if DeepLinkHandler.shared.handle(url) {
-                            // If the app was already active the scenePhase onChange
-                            // won't fire again — drain the queue immediately.
-                            appContainer.processPendingSMS()
+                            // Drain immediately only when unlocked; if locked the
+                            // queue will be drained once Face ID clears and the
+                            // scenePhase .active path runs.
+                            if !faceIDEnabled || isUnlocked {
+                                appContainer.processPendingSMS()
+                            }
                         }
                     }
 
@@ -105,9 +108,14 @@ struct FinanceTrackerApp: App {
                     if faceIDEnabled { isUnlocked = false }
                 }
                 // Drain any SMS queued by LogBankSMSIntent while the phone was locked.
-                if phase == .active {
+                // Only run when the app is actually accessible (not hidden behind lock screen).
+                if phase == .active && (!faceIDEnabled || isUnlocked) {
                     appContainer.processPendingSMS()
                 }
+            }
+            .onChange(of: isUnlocked) { _, unlocked in
+                // Process any SMS queued while the app was behind the lock screen.
+                if unlocked { appContainer.processPendingSMS() }
             }
             .onChange(of: faceIDEnabled) { _, enabled in
                 // If the user turns the toggle off, ensure the app stays unlocked.

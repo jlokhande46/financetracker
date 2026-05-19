@@ -6,7 +6,6 @@ import Foundation
 /// the text is enqueued in `PendingSMSStore` — the same queue used by
 /// `LogBankSMSIntent`. `AppContainer.processPendingSMS()` drains the queue
 /// and saves the transaction silently whenever the app is active.
-@Observable
 final class DeepLinkHandler {
     static let shared = DeepLinkHandler()
     private init() {}
