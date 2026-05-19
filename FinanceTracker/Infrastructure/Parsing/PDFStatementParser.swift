@@ -244,6 +244,7 @@ final class PDFStatementParser {
         if lower.contains("idfc")        { return "IDFC" }
         if lower.contains("indusind")    { return "IndusInd" }
         if lower.contains("rbl")         { return "RBL" }
+        if lower.contains("federal bank") || lower.contains("federalbank") { return "Federal" }
         return nil
     }
 
@@ -404,7 +405,7 @@ final class PDFStatementParser {
         guard !isJunkNarration(narration) else { return nil }
 
         // Determine debit/credit (with how-confident-we-are-about-direction)
-        let inferred = inferAmountAndType(amounts: amounts, line: line)
+        let inferred = inferAmountAndType(amounts: amounts, line: line, bank: bank)
         guard inferred.amount > 0 else { return nil }
 
         let normalizedMerchant = normalizer.normalize(narration)
@@ -665,7 +666,7 @@ final class PDFStatementParser {
         let directionConfidence: Double  // 0.0 – 1.0
     }
 
-    private func inferAmountAndType(amounts: [AmountMatch], line: String) -> InferenceResult {
+    private func inferAmountAndType(amounts: [AmountMatch], line: String, bank: String? = nil) -> InferenceResult {
         // Guard against empty input — protects every amounts.first! / .first further down.
         guard !amounts.isEmpty else {
             return InferenceResult(amount: 0, type: .debit, directionConfidence: 0)
@@ -715,11 +716,16 @@ final class PDFStatementParser {
             }
         }
 
-        // 4. Federal Bank / HDFC Savings — two columns (Withdrawal | Deposit | Balance).
+        // 4. Federal Bank — savings-account columns (Withdrawal | Deposit | Balance).
         // If PDFKit preserved an explicit 0.00 in the empty column, column position tells
         // direction: index 0 = withdrawal (debit), index 1 = deposit (credit).
+        //
+        // BANK-GATED — credit-card statements (ICICI Sapphiro, HDFC CC, SBI Cashback) do
+        // NOT have withdrawal/deposit columns; ICICI's Reward Points column would
+        // otherwise look like a deposit (e.g. PayBookMyShow row [{0},{14},{747.50}]
+        // would be misread as a ₹14 credit instead of a ₹747.50 debit).
         let nonBalance = Array(amounts.dropLast())
-        if nonBalance.count >= 2 {
+        if bank == "Federal", nonBalance.count >= 2 {
             let nonZeroIndices = nonBalance.indices.filter { nonBalance[$0].value > 0 }
             if nonZeroIndices.count == 1, let idx = nonZeroIndices.first {
                 let amount = nonBalance[idx].value
