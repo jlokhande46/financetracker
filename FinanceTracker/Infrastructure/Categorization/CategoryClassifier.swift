@@ -62,10 +62,12 @@ class CategoryClassifier {
         // Salary/Income
         // "neft" appears below under transfers — don't duplicate it here.
         ("salary", "salary"), ("payroll", "salary"),
-        // Transfers
+        // Transfers / payment gateways
         ("transfer", "transfer"), ("neft", "transfer"), ("rtgs", "transfer"),
         ("imps", "transfer"), ("phonepe", "transfer"), ("gpay", "transfer"),
         ("paytm", "transfer"), ("upi", "transfer"),
+        ("payu", "transfer"), ("razorpay", "transfer"), ("cashfree", "transfer"),
+        ("billdesk", "transfer"), ("ccavenue", "transfer"),
         // Rent
         ("rent", "rent"), ("nobroker", "rent"), ("magicbricks", "rent"),
         // EMI
