@@ -17,9 +17,15 @@ Grouped by area. Numbers are stable so you can refer to "PF-12" or
    foreground via `AppContainer.processPendingSMS()`.
 
 2. **SMS auto-import via URL scheme** — `financetracker://import?sms=<URL-encoded text>`
-   opens the app, jumps to the Transactions tab, runs `autoParseAndSave`,
-   saves and dismisses. Deduplicates by SMS hash within a 10-second window
-   and by `rawContent` recency within 2 minutes.
+   opens the app and silently enqueues the SMS in the same `PendingSMSStore`
+   queue used by `LogBankSMSIntent`. `AppContainer.processPendingSMS()` drains
+   the queue and saves the transaction with **no paste sheet shown**. When the
+   app is already foregrounded the drain runs immediately from `onOpenURL`;
+   when it was cold-launched, the `scenePhase == .active` drain handles it.
+   If Face ID is enabled and the app is locked, the queue is held and drained
+   the moment `isUnlocked` flips true. Deduplicates by SMS hash within a
+   10-second window in `DeepLinkHandler` and by `rawContent` recency within
+   2 minutes in `processPendingSMS`.
 
 3. **Bank parsers** — each pattern must round-trip correctly:
    - HDFC Savings sent: `Sent Rs.X From HDFC Bank A/C *XXXX To MERCHANT On DD/MM/YY Ref XXX`
