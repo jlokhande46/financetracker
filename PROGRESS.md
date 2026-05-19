@@ -101,6 +101,76 @@ maps each one to where it lives so reviewers can audit fast.
 
 ## Change log
 
+### 2026-05-19 — ICICI Sapphiro: gate step-4 column detect to Federal Bank only
+**Symptom (user-reported, after PR #5 was already merged):** ICICI Sapphiro
+PDF still produced wrong amounts and types — BookMyShow showed `+₹14` (credit)
+in CC Payment instead of `-₹747.50` (debit) in Entertainment.
+
+**Root cause:** PR #5's amount-selection fix in step 6 didn't help here because
+the row was being caught by **step 4** (column detection), which was written
+for Federal Bank's `[withdrawal, deposit, balance]` savings format but had no
+bank gate. With `allowWholeNumbers: true`, PDFKit extracts an ICICI Sapphiro
+row like:
+
+```
+12/05/2026 PAYBOOKMYSHOW COM Mumbai IN 0 14 747.50
+                              ^^^^^^^^^^ ^^ ^^^^^^^
+                              prior pts  earned  amount
+```
+
+as `amounts = [{0},{14},{747.50}]`. Step 4 then computes
+`nonBalance = [{0},{14}]`, sees exactly one non-zero at idx 1, and concludes
+"deposit column → credit ₹14" — completely wrong for a CC statement that
+doesn't have withdrawal/deposit columns at all.
+
+**Fix:**
+- [PDFStatementParser.swift:247](FinanceTracker/Infrastructure/Parsing/PDFStatementParser.swift)
+  `detectBank` now also recognises "Federal Bank" (it was previously absent —
+  meaning Federal statements were detected as `nil` and step 4 was effectively
+  firing on every bank).
+- `inferAmountAndType` now takes `bank: String?` and step 4 only runs when
+  `bank == "Federal"`. For ICICI / HDFC CC / SBI / unknown banks, step 4 is
+  skipped and the row falls through to step 6, where PR #5's `amounts.last`
+  preference correctly selects ₹747.50.
+
+**Verified row traces (all ICICI Sapphiro):**
+- `PayU 0 1.00 CR` `[{0},{1.00,CR}]` → step 1 → credit ₹1.00 ✓
+- `PayU 0 1.00` `[{0},{1.00}]` → step 6 → debit ₹1.00 ✓
+- `BookMyShow 14 747.50` `[{14},{747.50}]` → step 6 → debit ₹747.50 ✓
+- `BookMyShow 0 14 747.50` `[{0},{14},{747.50}]` → step 6 → debit ₹747.50 ✓ ← was bug
+- `BBPS Payment 0 750.00 CR` `[{0},{750.00,CR}]` → step 1 → credit ₹750.00 ✓
+- Federal `25000 0 90672.62` `[{25000},{0},{90672.62}]` → step 4 (Federal-gated) → debit ₹25000 ✓
+
+**PF impact:** restores PF-6 (ICICI Sapphiro). No regression to PF-3, PF-7,
+or other bank PDFs.
+
+> **Re-import required to see the fix.** Existing transactions are not
+> re-parsed; delete the bad ICICI rows (or `Profile → Clear All Data`) before
+> re-importing the PDF.
+
+### 2026-05-19 — Auto-confirm background SMS + ICICI reward-points fix (PR #5)
+- **AppContainer.processPendingSMS**: reverted `isConfirmed: confidence >= 0.85`
+  back to `isConfirmed: true`. After PR #4 introduced the gate, payment-gateway
+  SMS (PayU/Razorpay, generic fallback confidence 0.55) were landing in the
+  Review banner even though the user opted in to silent automation. The
+  confidence gate stays in `SMSImportView.autoParseAndSave` for the manual
+  paste path. PF-8 doc updated to reflect this split.
+- **CategoryClassifier**: payment-gateway keyword rules — PayU, Razorpay,
+  Cashfree, BillDesk, CCAvenue → `transfer` at 0.92 instead of falling to
+  the 0.55 generic credit fallback.
+- **PDFStatementParser.inferAmountAndType** — ICICI Sapphiro reward-points
+  column fix. Steps 5 and 6 now prefer `amounts.last` (the rightmost = actual
+  transaction column) over `firstNonZero(in: nonBalance)` when the last value
+  is positive. Fixes:
+  - `[{0},{1.00}]` PayU debit → ₹1.00 (was dropped — firstNonZero returned nil,
+    fell through to amounts.first=0, filtered by `>0` guard).
+  - `[{14},{747.50}]` BookMyShow → ₹747.50 (was ₹14, the reward points).
+
+  Federal Bank rows continue to hit step 4 column detection first, so the
+  step-6 change only fires for rows where neither CR/DR suffix, trailing C/D,
+  HDFC `+`-currency, nor column-detect matched. Strengthens PF-6 (ICICI),
+  no regression to PF-3, PF-6 (HDFC CC / SBI / Federal), PF-7, or PF-12.
+
 ### 2026-05-19 — Silent background SMS automation (no paste page)
 **Symptom:** Shortcuts automation opened the app to the "Paste SMS" page
 instead of saving the transaction silently. Strengthens PF-1 and PF-2.
