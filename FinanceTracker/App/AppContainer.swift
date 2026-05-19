@@ -89,7 +89,7 @@ class AppContainer {
                 date: result.date ?? now,
                 source: .sms,
                 confidence: classification.confidence,
-                isConfirmed: classification.confidence >= 0.85,
+                isConfirmed: true,
                 accountId: autoAccount?.id,
                 upiRef: result.upiRef,
                 bankRef: result.bankRef,
