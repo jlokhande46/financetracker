@@ -671,16 +671,19 @@ final class PDFStatementParser {
             return InferenceResult(amount: 0, type: .debit, directionConfidence: 0)
         }
 
-        // 1. Explicit Cr/Dr suffix on the amount — most reliable, BUT only trust it
-        //    when there are ≤3 amounts on the row. Federal-style savings statements
-        //    show 4 amounts per row (withdrawal, deposit, balance, with CR on the
-        //    balance) — there the CR refers to balance state, not transaction
-        //    direction. Column detection in step 4 handles that case correctly.
+        // 1. Explicit Cr/Dr suffix on the amount — most reliable, BUT:
+        //    (a) Skip this step when there are 4+ amounts (Federal savings: 4 cols,
+        //        the CR is on the running balance, not the transaction).
+        //    (b) When there are 2+ amounts, exclude the LAST from matching.
+        //        ICICI Sapphiro format: `transaction_amount  balance CR` — the CR
+        //        on the balance means "account is in credit", not transaction direction.
+        //        Taking the last amount would give ₹2,026 instead of ₹2.
         if amounts.count <= 3 {
-            if let cr = amounts.first(where: { $0.hasCRSuffix }) {
+            let candidates = amounts.count > 1 ? Array(amounts.dropLast()) : amounts
+            if let cr = candidates.first(where: { $0.hasCRSuffix }) {
                 return InferenceResult(amount: cr.value, type: .credit, directionConfidence: 1.0)
             }
-            if let dr = amounts.first(where: { $0.hasDRSuffix }) {
+            if let dr = candidates.first(where: { $0.hasDRSuffix }) {
                 return InferenceResult(amount: dr.value, type: .debit, directionConfidence: 1.0)
             }
         }
