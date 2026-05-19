@@ -671,11 +671,9 @@ final class PDFStatementParser {
             return InferenceResult(amount: 0, type: .debit, directionConfidence: 0)
         }
 
-        // 1. Explicit Cr/Dr suffix on the amount — most reliable, BUT only trust it
-        //    when there are ≤3 amounts on the row. Federal-style savings statements
-        //    show 4 amounts per row (withdrawal, deposit, balance, with CR on the
-        //    balance) — there the CR refers to balance state, not transaction
-        //    direction. Column detection in step 4 handles that case correctly.
+        // 1. Explicit Cr/Dr suffix on the amount — most reliable, BUT skip when
+        //    there are 4+ amounts (Federal savings: 4 cols, CR is on the running
+        //    balance, not the transaction). Column detection in step 4 handles that.
         if amounts.count <= 3 {
             if let cr = amounts.first(where: { $0.hasCRSuffix }) {
                 return InferenceResult(amount: cr.value, type: .credit, directionConfidence: 1.0)
@@ -741,7 +739,7 @@ final class PDFStatementParser {
             "credit card payment", "bill payment received"
         ]
         if ccPaymentKeywords.contains(where: { lower.contains($0) }) {
-            let chosen = firstNonZero(in: nonBalance) ?? amounts.first
+            let chosen = firstNonZero(in: nonBalance) ?? amounts.last
             return InferenceResult(amount: chosen?.value ?? 0, type: .credit, directionConfidence: 1.0)
         }
         let strictCreditKeywords = ["salary credit", "salary credited",
@@ -749,12 +747,24 @@ final class PDFStatementParser {
                                     "imps in/", "neft in/", "rtgs in/", "by transfer-",
                                     "credited by"]
         if strictCreditKeywords.contains(where: { lower.contains($0) }) {
-            let chosen = firstNonZero(in: nonBalance) ?? amounts.first
+            let chosen = firstNonZero(in: nonBalance) ?? amounts.last
             return InferenceResult(amount: chosen?.value ?? 0, type: .credit, directionConfidence: 0.8)
         }
 
         // 6. Default — debit, but with low directionConfidence so the row needs review.
-        let chosen = firstNonZero(in: nonBalance) ?? amounts.first
+        //
+        // Amount selection: prefer amounts.last (the rightmost column, which is the
+        // transaction amount on ICICI Sapphiro). The earlier columns can carry
+        // non-transaction integers — e.g. Reward Points (0 or 14) — that would
+        // otherwise be mistaken for the amount. Only fall back to firstNonZero(nonBalance)
+        // if amounts.last is zero or nil (which shouldn't happen, but guards against it).
+        let lastAmount = amounts.last
+        let chosen: AmountMatch?
+        if let last = lastAmount, last.value > 0 {
+            chosen = last
+        } else {
+            chosen = firstNonZero(in: nonBalance) ?? lastAmount
+        }
         return InferenceResult(amount: chosen?.value ?? 0, type: .debit, directionConfidence: 0.4)
     }
 
