@@ -101,6 +101,29 @@ maps each one to where it lives so reviewers can audit fast.
 
 ## Change log
 
+### 2026-05-19 — Auto-confirm background SMS + ICICI reward-points fix (PR #5)
+- **AppContainer.processPendingSMS**: reverted `isConfirmed: confidence >= 0.85`
+  back to `isConfirmed: true`. After PR #4 introduced the gate, payment-gateway
+  SMS (PayU/Razorpay, generic fallback confidence 0.55) were landing in the
+  Review banner even though the user opted in to silent automation. The
+  confidence gate stays in `SMSImportView.autoParseAndSave` for the manual
+  paste path. PF-8 doc updated to reflect this split.
+- **CategoryClassifier**: payment-gateway keyword rules — PayU, Razorpay,
+  Cashfree, BillDesk, CCAvenue → `transfer` at 0.92 instead of falling to
+  the 0.55 generic credit fallback.
+- **PDFStatementParser.inferAmountAndType** — ICICI Sapphiro reward-points
+  column fix. Steps 5 and 6 now prefer `amounts.last` (the rightmost = actual
+  transaction column) over `firstNonZero(in: nonBalance)` when the last value
+  is positive. Fixes:
+  - `[{0},{1.00}]` PayU debit → ₹1.00 (was dropped — firstNonZero returned nil,
+    fell through to amounts.first=0, filtered by `>0` guard).
+  - `[{14},{747.50}]` BookMyShow → ₹747.50 (was ₹14, the reward points).
+
+  Federal Bank rows continue to hit step 4 column detection first, so the
+  step-6 change only fires for rows where neither CR/DR suffix, trailing C/D,
+  HDFC `+`-currency, nor column-detect matched. Strengthens PF-6 (ICICI),
+  no regression to PF-3, PF-6 (HDFC CC / SBI / Federal), PF-7, or PF-12.
+
 ### 2026-05-19 — Silent background SMS automation (no paste page)
 **Symptom:** Shortcuts automation opened the app to the "Paste SMS" page
 instead of saving the transaction silently. Strengthens PF-1 and PF-2.

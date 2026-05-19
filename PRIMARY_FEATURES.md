@@ -68,9 +68,18 @@ Grouped by area. Numbers are stable so you can refer to "PF-12" or
    0. CC-payment shortcut (`bppy cc`, `cc payment`, `payment received` …)
       → `cc_payment` at confidence 1.0
    1. User rule (`MerchantRuleStore.categoryForMerchant`) → 1.0
-   2. Built-in keyword rule (`(merchant_substring, slug)` tuples) → 0.92
+   2. Built-in keyword rule (`(merchant_substring, slug)` tuples) → 0.92.
+      Includes payment-gateway aliases (`payu`, `razorpay`, `cashfree`,
+      `billdesk`, `ccavenue`) → `transfer`.
    3. Amount heuristic (credit ≥ ₹10K → `salary`) → 0.6
-   4. Fallback → `others` → 0.4 (triggers Review)
+   4. Small credit (< ₹10K) → `transfer` → 0.55
+   5. Fallback → `others` → 0.4
+
+   The confidence number triggers Review **only on the manual paste path**
+   inside `SMSImportView.autoParseAndSave` (gate: `confidence < 0.85`). The
+   background-automation path in `AppContainer.processPendingSMS()` saves
+   every parsed SMS with `isConfirmed = true` regardless of confidence —
+   the user opted in to silent automation and accepts the result.
 
 9. **User rules apply at import time** — a "Remember" tap saves both display
    name AND category to `MerchantRuleStore`. The next import of the same
