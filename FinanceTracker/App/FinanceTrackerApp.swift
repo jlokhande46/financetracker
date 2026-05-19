@@ -83,7 +83,11 @@ struct FinanceTrackerApp: App {
                         OnboardingView(hasOnboarded: $hasOnboarded)
                     }
                     .onOpenURL { url in
-                        DeepLinkHandler.shared.handle(url)
+                        if DeepLinkHandler.shared.handle(url) {
+                            // If the app was already active the scenePhase onChange
+                            // won't fire again — drain the queue immediately.
+                            appContainer.processPendingSMS()
+                        }
                     }
 
                 // Lock overlay — covers everything while the app is locked

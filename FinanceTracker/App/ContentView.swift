@@ -35,8 +35,6 @@ struct ContentView: View {
     @State private var analyticsVM: AnalyticsViewModel?
     @State private var budgetsVM: BudgetsViewModel?
 
-    private var deepLink: DeepLinkHandler { DeepLinkHandler.shared }
-
     // MARK: - Body
 
     var body: some View {
@@ -47,18 +45,6 @@ struct ContentView: View {
                 tabContent(container: container)
             } else {
                 LoadingView()
-            }
-        }
-        .onChange(of: deepLink.pendingSMSText) { _, text in
-            if text != nil {
-                selectedTab = .transactions
-            }
-        }
-        .onAppear {
-            // Cold-launch: deep link may have set pendingSMSText before this
-            // view mounted, in which case .onChange will not fire.
-            if deepLink.pendingSMSText?.isEmpty == false {
-                selectedTab = .transactions
             }
         }
         .task {
