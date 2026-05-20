@@ -101,6 +101,13 @@ maps each one to where it lives so reviewers can audit fast.
 
 ## Change log
 
+### 2026-05-21 — PDF re-import dedup (PR #6)
+`TransactionRepositoryImpl.saveBulk` had no duplicate check, so re-importing
+the same PDF doubled every transaction. Now builds a Set of existing
+non-deleted `rawContent` values and skips incoming rows whose `rawContent`
+is already present. Manual-add rows (no rawContent) unaffected. SMS path
+unaffected (uses `save`, not `saveBulk`). Strengthens PF-5.
+
 ### 2026-05-19 — ICICI Sapphiro: gate step-4 column detect to Federal Bank only
 **Symptom (user-reported, after PR #5 was already merged):** ICICI Sapphiro
 PDF still produced wrong amounts and types — BookMyShow showed `+₹14` (credit)
