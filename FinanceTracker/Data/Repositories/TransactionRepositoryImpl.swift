@@ -101,7 +101,23 @@ class TransactionRepositoryImpl {
     }
 
     func saveBulk(_ entities: [TransactionEntity]) {
+        // Dedup: if any incoming entity carries a rawContent (PDF rows always do),
+        // fetch existing rawContent values and skip rows already in the DB.
+        let incomingRaw = Set(entities.compactMap { $0.rawContent }.filter { !$0.isEmpty })
+        var existingRaw = Set<String>()
+        if !incomingRaw.isEmpty {
+            let descriptor = FetchDescriptor<TransactionModel>(
+                predicate: #Predicate<TransactionModel> { !$0.isDeleted }
+            )
+            if let existing = try? modelContext.fetch(descriptor) {
+                existingRaw = Set(existing.compactMap { $0.rawContent }.filter { !$0.isEmpty })
+            }
+        }
+
         for entity in entities {
+            if let raw = entity.rawContent, !raw.isEmpty, existingRaw.contains(raw) {
+                continue
+            }
             modelContext.insert(TransactionModel.from(entity: entity))
         }
         persistChanges()
