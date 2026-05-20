@@ -51,7 +51,7 @@ final class PDFStatementParser {
         // A new record starts at the next line that begins with a date. We
         // concatenate continuation lines onto the current record so the parser
         // sees the date AND the amount in the same string.
-        let records = groupLinesIntoRecords(lines)
+        let records = groupLinesIntoRecords(lines, bank: bank)
 
         // HDFC-Savings detection: PDFKit reads the tabular layout column-first,
         // so dates / narrations / amounts end up scrambled into separate sections.
@@ -468,7 +468,18 @@ final class PDFStatementParser {
 
     /// A "record" is a transaction's text — possibly spanning multiple PDFKit
     /// output lines. A new record begins at any line that starts with a date.
-    private func groupLinesIntoRecords(_ lines: [String]) -> [String] {
+    ///
+    /// `bank` gates an additional terminator: for credit-card statements
+    /// (ICICI Sapphiro, HDFC CC, SBI Cashback) each row has exactly one
+    /// transaction amount on its last line, so we close the record once that
+    /// amount line is appended. This stops the LAST transaction in a PDF from
+    /// absorbing the trailing footer / legal / marketing text — which would
+    /// otherwise pollute amount extraction AND trip substring keyword matches
+    /// in `inferAmountAndType` step 5 ("payment received" appears in ICICI's
+    /// MAD-calculation footer, for example). Federal Bank savings rows can
+    /// split [withdrawal, deposit, balance] across separate lines, so this
+    /// terminator is suppressed for Federal.
+    private func groupLinesIntoRecords(_ lines: [String], bank: String? = nil) -> [String] {
         // Accept any of:
         //   "07/05/2026"  (HDFC, ICICI, Federal)
         //   "07-05-2026"  (HDFC SMS-derived)
@@ -478,19 +489,31 @@ final class PDFStatementParser {
             pattern: #"^(?:\d{1,2}[/-][A-Za-z0-9]{2,9}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4})\b"#
         ) else { return lines }
 
+        let applyClosingTermination = bank != "Federal"
+        // Line ends with a decimal or comma-grouped amount, optionally followed
+        // by Cr/Dr/C/D — the standard shape of the closing amount column.
+        let closingAmountRegex = try? NSRegularExpression(
+            pattern: #"(?:\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|\d+\.\d{2})\s*(?:[CD]|Cr|Dr|CR|DR)?\s*$"#
+        )
+
         var records: [String] = []
         var current = ""
+        var currentClosed = false
         for line in lines {
-            let isRecordStart = regex.firstMatch(
-                in: line,
-                range: NSRange(line.startIndex..., in: line)
-            ) != nil
+            let nsRange = NSRange(line.startIndex..., in: line)
+            let isRecordStart = regex.firstMatch(in: line, range: nsRange) != nil
             if isRecordStart {
                 if !current.isEmpty { records.append(current) }
                 current = line
-            } else if !current.isEmpty {
+                currentClosed = applyClosingTermination &&
+                    (closingAmountRegex?.firstMatch(in: line, range: nsRange) != nil)
+            } else if !current.isEmpty && !currentClosed {
                 // Continuation — join with space so date and amount end up in one string.
                 current += " " + line
+                if applyClosingTermination,
+                   closingAmountRegex?.firstMatch(in: line, range: nsRange) != nil {
+                    currentClosed = true
+                }
             }
         }
         if !current.isEmpty { records.append(current) }
