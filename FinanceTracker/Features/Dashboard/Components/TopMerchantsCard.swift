@@ -4,6 +4,7 @@ struct TopMerchantsCard: View {
 
     let merchants: [MerchantSpend]
     var onViewAll: (() -> Void)? = nil
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     private var maxAmount: Decimal {
         merchants.map(\.amount).max() ?? 1
@@ -79,7 +80,7 @@ struct TopMerchantsCard: View {
 
                     Spacer()
 
-                    Text(merchant.amount.currencyString)
+                    Text(merchant.amount.currencyString(hidden: hideAmounts))
                         .font(Font.amount(14))
                         .fontWeight(.semibold)
                         .foregroundColor(.textPrimary)

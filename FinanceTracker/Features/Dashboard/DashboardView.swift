@@ -8,6 +8,7 @@ struct DashboardView: View {
     @State private var showQuickReview = false
     @State private var selectedAccount: AccountEntity? = nil
     @State private var showAllMerchants = false
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -101,6 +102,21 @@ struct DashboardView: View {
             }
 
             Spacer()
+
+            // Privacy toggle — masks every amount on this tab. The persisted
+            // @AppStorage("hideAmounts") is read by each card directly so the
+            // change propagates without re-plumbing state through view models.
+            Button(action: {
+                withAnimation(.springy) { hideAmounts.toggle() }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }) {
+                Image(systemName: hideAmounts ? "eye.slash.fill" : "eye.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(hideAmounts ? .warningAmber : .textSecondary)
+                    .frame(width: 36, height: 36)
+                    .background(Color.bgCard)
+                    .clipShape(Circle())
+            }
 
             Button(action: { viewModel.selectMonth(nextMonth) }) {
                 Image(systemName: "chevron.right")
@@ -363,6 +379,7 @@ struct DashboardView: View {
 // MARK: - Account Balance Chip
 private struct AccountBalanceChip: View {
     let account: AccountEntity
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -382,7 +399,7 @@ private struct AccountBalanceChip: View {
                 .foregroundColor(.textPrimary)
                 .lineLimit(1)
 
-            Text(account.balance.currencyString)
+            Text(account.balance.currencyString(hidden: hideAmounts))
                 .font(Font.amount(16))
                 .foregroundColor(.textPrimary)
                 .contentTransition(.numericText())

@@ -3,6 +3,7 @@ import SwiftUI
 struct CardDueCard: View {
     let statement: CardStatementEntity
     let onMarkPaid: () -> Void
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     private var daysLabel: String {
         let d = statement.daysUntilDue
@@ -15,6 +16,7 @@ struct CardDueCard: View {
     private var accentColor: Color { Color(hex: statement.urgencyColor) }
 
     private var formattedTotal: String {
+        if hideAmounts { return hiddenAmountPlaceholder }
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencySymbol = "₹"
@@ -75,7 +77,9 @@ struct CardDueCard: View {
             }
 
             if let min = statement.minimumDue, min < statement.totalDue {
-                Text("Min ₹\(min.formatted(.number.precision(.fractionLength(0))))")
+                Text(hideAmounts
+                     ? "Min \(hiddenAmountPlaceholder)"
+                     : "Min ₹\(min.formatted(.number.precision(.fractionLength(0))))")
                     .font(.micro)
                     .foregroundStyle(Color.textSecondary)
             }

@@ -5,6 +5,7 @@ struct SpendingSummaryCard: View {
     let analysis: MonthlyAnalysis
     @State private var animateProgress = false
     @State private var animateNumbers = false
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     private var progress: Double {
         guard analysis.totalIncome > 0 else { return 0 }
@@ -46,7 +47,7 @@ struct SpendingSummaryCard: View {
                     .kerning(1.5)
 
                 // Main amount
-                Text(animateNumbers ? analysis.totalExpenses.currencyString : "₹0")
+                Text(animateNumbers ? analysis.totalExpenses.currencyString(hidden: hideAmounts) : "₹0")
                     .font(Font.amount(40))
                     .fontWeight(.bold)
                     .foregroundColor(.textPrimary)
@@ -77,7 +78,7 @@ struct SpendingSummaryCard: View {
                             .font(.micro)
                             .foregroundColor(.textSecondary)
                         Spacer()
-                        Text(analysis.totalIncome.currencyString)
+                        Text(analysis.totalIncome.currencyString(hidden: hideAmounts))
                             .font(.micro)
                             .foregroundColor(.textSecondary)
                     }
@@ -85,10 +86,11 @@ struct SpendingSummaryCard: View {
 
                 // Bottom stats row
                 HStack(spacing: 0) {
-                    // Income
+                    // Income — statItem prefixes "₹", so strip the symbol from
+                    // either the placeholder or the formatted amount before passing.
                     statItem(
                         label: "Income",
-                        value: analysis.totalIncome.compactString,
+                        value: hideAmounts ? "••••" : analysis.totalIncome.compactString,
                         icon: "arrow.down.circle.fill",
                         color: .incomeGreen
                     )
@@ -149,7 +151,9 @@ struct SpendingSummaryCard: View {
             }
 
             HStack(alignment: .bottom, spacing: 4) {
-                Text("₹\((analysis.savings < 0 ? -analysis.savings : analysis.savings).compactString)")
+                Text(hideAmounts
+                     ? hiddenAmountPlaceholder
+                     : "₹\((analysis.savings < 0 ? -analysis.savings : analysis.savings).compactString)")
                     .font(Font.amount(18))
                     .fontWeight(.semibold)
                     .foregroundColor(analysis.savings >= 0 ? .textPrimary : .expenseRed)

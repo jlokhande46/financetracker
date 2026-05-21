@@ -1,5 +1,8 @@
 import Foundation
 
+/// Replacement string used by the dashboard "hide amounts" eye toggle.
+let hiddenAmountPlaceholder = "₹••••"
+
 extension Decimal {
     var currencyString: String {
         let formatter = NumberFormatter()
@@ -29,6 +32,16 @@ extension Decimal {
         case 1_000...:       return String(format: "₹%.1fK", d / 1_000)
         default:             return String(format: d.truncatingRemainder(dividingBy: 1) == 0 ? "₹%.0f" : "₹%.2f", d)
         }
+    }
+
+    /// Same as `currencyString` but returns the privacy placeholder when `hidden` is true.
+    func currencyString(hidden: Bool) -> String {
+        hidden ? hiddenAmountPlaceholder : currencyString
+    }
+
+    /// Same as `compactString` but returns the privacy placeholder when `hidden` is true.
+    func compactString(hidden: Bool) -> String {
+        hidden ? hiddenAmountPlaceholder : compactString
     }
 }
 

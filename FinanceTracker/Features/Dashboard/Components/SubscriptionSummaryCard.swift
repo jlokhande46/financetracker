@@ -4,6 +4,7 @@ struct SubscriptionSummaryCard: View {
 
     let subscriptions: [SubscriptionItem]
     @State private var isExpanded = false
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     private let maxCollapsed = 4
 
@@ -35,7 +36,9 @@ struct SubscriptionSummaryCard: View {
                             .foregroundColor(.textPrimary)
                         Text("·")
                             .foregroundColor(.textSecondary)
-                        Text("\(totalMonthly.compactString)/mo")
+                        Text(hideAmounts
+                             ? "\(hiddenAmountPlaceholder)/mo"
+                             : "\(totalMonthly.compactString)/mo")
                             .font(Font.amount(15))
                             .fontWeight(.semibold)
                             .foregroundColor(.brandPrimary)
@@ -74,7 +77,7 @@ struct SubscriptionSummaryCard: View {
 
                 Spacer()
 
-                Text(totalMonthly.currencyString)
+                Text(totalMonthly.currencyString(hidden: hideAmounts))
                     .font(Font.amount(15))
                     .fontWeight(.bold)
                     .foregroundColor(.textPrimary)
@@ -149,7 +152,7 @@ struct SubscriptionSummaryCard: View {
 
             // Amount
             VStack(alignment: .trailing, spacing: 2) {
-                Text(sub.amount.currencyString)
+                Text(sub.amount.currencyString(hidden: hideAmounts))
                     .font(Font.amount(14))
                     .fontWeight(.semibold)
                     .foregroundColor(.textPrimary)

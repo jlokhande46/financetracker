@@ -7,6 +7,7 @@ struct InsightCard: View {
 
     @State private var dragOffset: CGFloat = 0
     @State private var isDismissing = false
+    @AppStorage("hideAmounts") private var hideAmounts: Bool = false
 
     private var accentColor: Color {
         switch insight.type {
@@ -80,7 +81,7 @@ struct InsightCard: View {
                 // Amount badge (if present)
                 if let amount = insight.amount {
                     HStack(spacing: 4) {
-                        Text(amount.currencyString)
+                        Text(amount.currencyString(hidden: hideAmounts))
                             .font(Font.amount(13))
                             .fontWeight(.semibold)
                             .foregroundColor(accentColor)
