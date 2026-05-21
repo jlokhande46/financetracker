@@ -15,48 +15,135 @@ final class NotificationManager: NSObject {
 
     // MARK: - Card due-date reminders
 
+    /// Maximum days ahead of the current sweep we schedule a 9 AM reminder.
+    /// iOS caps pending notifications at 64 per app; with up to 4 active cards
+    /// + a 6 PM reminder layered into the last 3 days, 21 keeps us well under.
+    /// Each daily sweep refreshes the schedule so longer cycles still get the
+    /// next-day reminder when the user re-opens the app.
+    private static let maxAMOffset = 21
+    /// Trailing days before due that also get a 6 PM "increased frequency"
+    /// reminder, on top of the standard 9 AM.
+    private static let extraPMTrailingDays = 3
+
+    /// Schedules the rolling daily reminders for an unpaid statement plus an
+    /// extra evening reminder for the last 3 days before due. The full
+    /// schedule is rebuilt each call — older requests for the same statement
+    /// are cancelled first via `cancelReminders`.
     func scheduleReminders(for statement: CardStatementEntity) {
         cancelReminders(for: statement.id)
         guard !statement.isPaid else { return }
 
         let center = UNUserNotificationCenter.current()
-        let today = Calendar.current.startOfDay(for: Date())
-        let due   = Calendar.current.startOfDay(for: statement.dueDate)
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let due   = cal.startOfDay(for: statement.dueDate)
         guard due >= today else { return }
 
-        let days = Calendar.current.dateComponents([.day], from: today, to: due).day ?? 0
+        let daysToDue = cal.dateComponents([.day], from: today, to: due).day ?? 0
+        let amountStr = "₹\(formattedAmount(statement.totalDue))"
 
-        for offset in 0...min(days, 6) {
-            guard let fireDate = Calendar.current.date(byAdding: .day, value: offset, to: today) else { continue }
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: fireDate)
-            components.hour = 9
-            components.minute = 0
+        // 9 AM daily reminder for every day from today through due.
+        let amCap = min(daysToDue, Self.maxAMOffset)
+        for offset in 0...amCap {
+            guard let fireDate = cal.date(byAdding: .day, value: offset, to: today) else { continue }
+            scheduleSingleReminder(
+                center: center,
+                statement: statement,
+                fireDate: fireDate,
+                hour: 9,
+                slot: "am",
+                offset: offset,
+                daysLeft: daysToDue - offset,
+                amountStr: amountStr
+            )
+        }
 
-            let content = UNMutableNotificationContent()
-            content.title = "Card Payment Due"
-            content.sound = .default
-
-            let daysLeft = days - offset
-            let amountStr = "₹\(formattedAmount(statement.totalDue))"
-            switch daysLeft {
-            case 0:
-                content.body = "\(statement.accountName) payment of \(amountStr) is due TODAY."
-                content.interruptionLevel = .timeSensitive
-            case 1:
-                content.body = "\(statement.accountName) payment of \(amountStr) is due TOMORROW."
-            default:
-                content.body = "\(statement.accountName) — \(amountStr) due in \(daysLeft) days."
-            }
-
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let id = cardNotificationId(statement.id, offset: offset)
-            center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        // 6 PM extra reminder for the trailing days. Skip the due day's PM
+        // slot — the AM timeSensitive notification already covers the day.
+        let pmStart = max(0, daysToDue - Self.extraPMTrailingDays + 1)
+        for offset in pmStart..<daysToDue {
+            guard let fireDate = cal.date(byAdding: .day, value: offset, to: today) else { continue }
+            scheduleSingleReminder(
+                center: center,
+                statement: statement,
+                fireDate: fireDate,
+                hour: 18,
+                slot: "pm",
+                offset: offset,
+                daysLeft: daysToDue - offset,
+                amountStr: amountStr
+            )
         }
     }
 
+    private func scheduleSingleReminder(
+        center: UNUserNotificationCenter,
+        statement: CardStatementEntity,
+        fireDate: Date,
+        hour: Int,
+        slot: String,
+        offset: Int,
+        daysLeft: Int,
+        amountStr: String
+    ) {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: fireDate)
+        components.hour = hour
+        components.minute = 0
+
+        let content = UNMutableNotificationContent()
+        content.title = "Card Payment Due"
+        content.sound = .default
+        content.threadIdentifier = "card-due-\(statement.id.uuidString)"
+
+        switch daysLeft {
+        case 0:
+            content.body = "\(statement.accountName) payment of \(amountStr) is due TODAY."
+            content.interruptionLevel = .timeSensitive
+        case 1:
+            content.body = "\(statement.accountName) payment of \(amountStr) is due TOMORROW."
+            if slot == "pm" { content.interruptionLevel = .timeSensitive }
+        default:
+            content.body = "\(statement.accountName) — \(amountStr) due in \(daysLeft) days."
+        }
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let id = cardNotificationId(statement.id, offset: offset, slot: slot)
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
     func cancelReminders(for statementId: UUID) {
-        let ids = (0...6).map { cardNotificationId(statementId, offset: $0) }
+        var ids: [String] = []
+        for offset in 0...Self.maxAMOffset {
+            ids.append(cardNotificationId(statementId, offset: offset, slot: "am"))
+            ids.append(cardNotificationId(statementId, offset: offset, slot: "pm"))
+        }
+        ids.append(billGeneratedNotificationId(statementId))
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    /// One-shot "Bill Generated" alert fired immediately after BillCycleManager
+    /// creates a new CardStatement. Distinct from the recurring payment
+    /// reminders — surfaces the freshly-billed amount + due date once, then
+    /// the daily reminders pick up from there.
+    func fireBillGeneratedAlert(for statement: CardStatementEntity) {
+        let content = UNMutableNotificationContent()
+        content.title = "Bill Generated"
+        content.sound = .default
+        content.threadIdentifier = "card-due-\(statement.id.uuidString)"
+        let amount = "₹\(formattedAmount(statement.totalDue))"
+        let dueFmt = DateFormatter()
+        dueFmt.dateFormat = "d MMM"
+        content.body = "\(statement.accountName): \(amount) billed. Due \(dueFmt.string(from: statement.dueDate))."
+
+        // Small delay so the alert lands AFTER the user finishes interacting
+        // with whatever action triggered the sweep (app launch, txn save).
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 4, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: billGeneratedNotificationId(statement.id),
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 
     func cancelAll() {
@@ -122,8 +209,12 @@ final class NotificationManager: NSObject {
 
     // MARK: - Private helpers
 
-    private func cardNotificationId(_ statementId: UUID, offset: Int) -> String {
-        "card_due_\(statementId.uuidString)_d\(offset)"
+    private func cardNotificationId(_ statementId: UUID, offset: Int, slot: String) -> String {
+        "card_due_\(statementId.uuidString)_d\(offset)_\(slot)"
+    }
+
+    private func billGeneratedNotificationId(_ statementId: UUID) -> String {
+        "card_bill_gen_\(statementId.uuidString)"
     }
 
     private func budgetDedupKey(_ budgetId: UUID, level: String) -> String {

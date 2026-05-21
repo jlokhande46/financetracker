@@ -82,6 +82,13 @@ final class BillCycleManager {
         )
         statementRepo.save(statement)
         NotificationManager.shared.scheduleReminders(for: statement)
+        // Fire the one-shot "Bill Generated" alert only when the cycle just
+        // closed (statementDate is today or yesterday). Avoids spam if the
+        // sweep is catching up on a statement that closed weeks ago.
+        let daysSinceCycle = Calendar.current.dateComponents([.day], from: cycleEnd, to: now).day ?? 0
+        if daysSinceCycle <= 1 {
+            NotificationManager.shared.fireBillGeneratedAlert(for: statement)
+        }
     }
 
     // MARK: - Auto mark-paid
