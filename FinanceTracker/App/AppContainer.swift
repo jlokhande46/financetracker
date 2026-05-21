@@ -96,6 +96,10 @@ class AppContainer {
                 rawContent: trimmed
             )
             transactionRepo.save(entity)
+            // Surface a local notification so the user knows the background
+            // save happened. When confidence is low, the alert body nudges
+            // toward Quick Review so the row doesn't sit forgotten.
+            NotificationManager.shared.fireTransactionSavedAlert(for: entity)
             savedAny = true
         }
 

@@ -150,6 +150,43 @@ final class NotificationManager: NSObject {
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     }
 
+    // MARK: - SMS / background-saved transaction alerts
+
+    /// Posts a local notification after `AppContainer.processPendingSMS` (or
+    /// the URL-scheme path) saves a transaction silently in the background.
+    /// When the saved row has low confidence (`confidence < 0.85`) the alert
+    /// nudges the user to review it; otherwise it's a passive confirmation.
+    func fireTransactionSavedAlert(for transaction: TransactionEntity) {
+        let needsReview = transaction.confidence < 0.85
+        let merchant = transaction.merchantName.isEmpty
+            ? transaction.merchantRaw
+            : transaction.merchantName
+        let displayMerchant = merchant.isEmpty ? "Unknown" : merchant
+        let amount = "₹\(formattedAmount(transaction.amount))"
+        let sign = transaction.isCredit ? "+" : "-"
+
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        content.threadIdentifier = "sms-saved"
+        if needsReview {
+            content.title = "Transaction needs review"
+            content.body = "\(sign)\(amount) \(displayMerchant) — tap to confirm category"
+        } else {
+            content.title = "Transaction saved"
+            content.body = "\(sign)\(amount) \(displayMerchant)"
+        }
+
+        // 2-second delay so multiple saves in the same drain don't fire as a
+        // simultaneous stack on the lock screen.
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "txn_saved_\(transaction.id.uuidString)",
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     // MARK: - Budget alerts
 
     /// Checks every active budget and fires a notification when it crosses 80 % or 100 %.
