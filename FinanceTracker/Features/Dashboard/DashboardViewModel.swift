@@ -78,6 +78,27 @@ final class DashboardViewModel {
     var unreadInsightCount: Int { insights.filter { !$0.isRead }.count }
     var visibleInsights: [InsightEntity] { insights.filter { !$0.isRead } }
 
+    /// Active credit-card accounts — surfaced by the dashboard "My Cards" section.
+    var creditCards: [AccountEntity] {
+        accounts.filter { $0.isActive && $0.type == .credit }
+    }
+
+    /// Active non-credit accounts (savings / wallet / current / investment) —
+    /// shown in the secondary horizontal "ACCOUNTS" strip below "My Cards".
+    var nonCreditAccounts: [AccountEntity] {
+        accounts.filter { $0.isActive && $0.type != .credit }
+    }
+
+    /// Look up the (single) unpaid statement for a given card account, if any.
+    /// Used by `CardCycleCard` to decide whether to surface a Mark-Paid button.
+    func unpaidStatement(for accountId: UUID) -> CardStatementEntity? {
+        upcomingStatements.first { $0.accountId == accountId }
+    }
+
+    /// Total number of cards with an outstanding unpaid statement — drives
+    /// the "N due" badge in the My Cards section header.
+    var unpaidStatementCount: Int { upcomingStatements.count }
+
     // MARK: - Insight dismissal (persisted via UserDefaults)
 
     private static let dismissedInsightsKey = "dismissedInsightIDs"

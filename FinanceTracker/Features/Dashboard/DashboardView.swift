@@ -191,17 +191,19 @@ struct DashboardView: View {
                         .animation(.easeOut(duration: 0.4).delay(0.35), value: appearAnimation)
                 }
 
-                // Card due dates
-                if !viewModel.upcomingStatements.isEmpty {
-                    cardDueSection
+                // My Cards — credit cards with bill / due cycle info, always shown
+                if !viewModel.creditCards.isEmpty {
+                    myCardsSection
                         .opacity(appearAnimation ? 1 : 0)
                         .animation(.easeOut(duration: 0.4).delay(0.38), value: appearAnimation)
                 }
 
-                // Account balances
-                accountBalancesSection
-                    .opacity(appearAnimation ? 1 : 0)
-                    .animation(.easeOut(duration: 0.4).delay(0.4), value: appearAnimation)
+                // Account balances — savings / other non-credit accounts
+                if !viewModel.nonCreditAccounts.isEmpty {
+                    accountBalancesSection
+                        .opacity(appearAnimation ? 1 : 0)
+                        .animation(.easeOut(duration: 0.4).delay(0.4), value: appearAnimation)
+                }
             }
         } else {
             emptyState
@@ -274,29 +276,42 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Card Due Dates
+    // MARK: - My Cards (credit cards + cycles)
 
-    private var cardDueSection: some View {
+    private var myCardsSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
-                Text("CARD PAYMENTS DUE")
+                Text("MY CARDS")
                     .font(.micro)
                     .fontWeight(.semibold)
                     .foregroundColor(.textSecondary)
                     .kerning(1.2)
                 Spacer()
-                Image(systemName: "bell.badge.fill")
-                    .font(.system(size: 13))
+                if viewModel.unpaidStatementCount > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bell.badge.fill")
+                            .font(.system(size: 11))
+                        Text("\(viewModel.unpaidStatementCount) due")
+                            .font(.micro)
+                    }
                     .foregroundStyle(Color.warningAmber)
+                }
             }
             .padding(.horizontal, Spacing.base)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Spacing.md) {
-                    ForEach(viewModel.upcomingStatements) { stmt in
-                        CardDueCard(statement: stmt) {
-                            viewModel.markStatementPaid(stmt.id)
-                        }
+                    ForEach(viewModel.creditCards) { account in
+                        CardCycleCard(
+                            account: account,
+                            unpaidStatement: viewModel.unpaidStatement(for: account.id),
+                            onMarkPaid: {
+                                if let stmt = viewModel.unpaidStatement(for: account.id) {
+                                    viewModel.markStatementPaid(stmt.id)
+                                }
+                            },
+                            onTap: { selectedAccount = account }
+                        )
                     }
                 }
                 .padding(.horizontal, Spacing.base)
@@ -305,7 +320,7 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Account Balances
+    // MARK: - Account Balances (non-credit only — savings / wallet / investment)
     private var accountBalancesSection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text("ACCOUNTS")
@@ -317,7 +332,7 @@ struct DashboardView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Spacing.md) {
-                    ForEach(viewModel.accounts.filter(\.isActive)) { account in
+                    ForEach(viewModel.nonCreditAccounts) { account in
                         Button { selectedAccount = account } label: {
                             AccountBalanceChip(account: account)
                         }

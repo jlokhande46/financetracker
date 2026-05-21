@@ -3,10 +3,10 @@ import Foundation
 struct SampleData {
     static let accounts: [AccountEntity] = [
         AccountEntity(id: UUID(), name: "HDFC Savings", bankName: "HDFC Bank", type: .savings, last4: "6311", balance: 1_23_450, colorHex: "#3B82F6"),
-        AccountEntity(id: UUID(), name: "HDFC Tata Neu Infinity", bankName: "HDFC Bank", type: .credit, last4: "6624", balance: 34_116, creditLimit: 5_00_000, colorHex: "#8B5CF6"),
-        AccountEntity(id: UUID(), name: "HDFC Regalia Gold", bankName: "HDFC Bank", type: .credit, last4: "4493", balance: 3_237, creditLimit: 3_00_000, colorHex: "#6366F1"),
-        AccountEntity(id: UUID(), name: "ICICI Sapphiro", bankName: "ICICI Bank", type: .credit, last4: "2000", balance: 0, creditLimit: 4_00_000, colorHex: "#F59E0B"),
-        AccountEntity(id: UUID(), name: "SBI Cashback", bankName: "SBI", type: .credit, last4: "5075", balance: 27_354, creditLimit: 2_00_000, colorHex: "#10B981"),
+        AccountEntity(id: UUID(), name: "HDFC Tata Neu Infinity", bankName: "HDFC Bank", type: .credit, last4: "6624", balance: 34_116, creditLimit: 5_00_000, colorHex: "#8B5CF6", statementDay: 14, dueDay: 30),
+        AccountEntity(id: UUID(), name: "HDFC Regalia Gold", bankName: "HDFC Bank", type: .credit, last4: "4493", balance: 3_237, creditLimit: 3_00_000, colorHex: "#6366F1", statementDay: 14, dueDay: 30),
+        AccountEntity(id: UUID(), name: "ICICI Sapphiro", bankName: "ICICI Bank", type: .credit, last4: "2000", balance: 0, creditLimit: 4_00_000, colorHex: "#F59E0B", statementDay: 16, dueDay: 30),
+        AccountEntity(id: UUID(), name: "SBI Cashback", bankName: "SBI", type: .credit, last4: "5075", balance: 27_354, creditLimit: 2_00_000, colorHex: "#10B981", statementDay: 7, dueDay: 21),
         AccountEntity(id: UUID(), name: "Federal Bank Savings", bankName: "Federal Bank", type: .savings, last4: "8708", balance: 45_000, colorHex: "#06B6D4"),
     ]
 

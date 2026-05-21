@@ -62,7 +62,6 @@ class AccountRepositoryImpl {
     /// with the correct last4, even after a clear-data reset or first install.
     func syncUserCards() {
         let existing = (try? modelContext.fetch(FetchDescriptor<AccountModel>())) ?? []
-        let existingLast4s = Set(existing.compactMap { $0.last4 })
 
         var changed = false
 
@@ -74,10 +73,34 @@ class AccountRepositoryImpl {
         }
 
         // Ensure every real card exists
-        let freshLast4s = Set((try? modelContext.fetch(FetchDescriptor<AccountModel>()).compactMap { $0.last4 }) ?? [])
+        let freshModels = (try? modelContext.fetch(FetchDescriptor<AccountModel>())) ?? []
+        let freshLast4s = Set(freshModels.compactMap { $0.last4 })
         for account in SampleData.accounts where account.last4 != nil && !freshLast4s.contains(account.last4!) {
             save(account)
             changed = true
+        }
+
+        // Backfill statement/due days on any existing card that's missing them.
+        // The sample data is the source of truth for the user's real cycle days
+        // (HDFC 14/30, ICICI 16/30, SBI 7/21). We only backfill — never overwrite —
+        // so a user who customised days in EditCycleSheet keeps their choice.
+        let sampleByLast4 = Dictionary(uniqueKeysWithValues:
+            SampleData.accounts.compactMap { acc -> (String, AccountEntity)? in
+                guard let l4 = acc.last4 else { return nil }
+                return (l4, acc)
+            }
+        )
+        let postSyncModels = (try? modelContext.fetch(FetchDescriptor<AccountModel>())) ?? []
+        for model in postSyncModels {
+            guard let last4 = model.last4, let sample = sampleByLast4[last4] else { continue }
+            if model.statementDay == nil, let day = sample.statementDay {
+                model.statementDay = day
+                changed = true
+            }
+            if model.dueDay == nil, let day = sample.dueDay {
+                model.dueDay = day
+                changed = true
+            }
         }
 
         if changed { try? modelContext.save() }
