@@ -49,6 +49,49 @@ class TransactionRepositoryImpl {
         return fetchAll(from: start, to: end)
     }
 
+    /// Result of a cursor-paged fetch. `oldestDate` is the date of the LAST
+    /// (oldest) row in the page — pass it back as `beforeDate` to load the
+    /// next page. `hasMore` indicates whether at least one row exists beyond
+    /// the returned page (fetched via a `+1` peek under the hood).
+    struct Page {
+        let transactions: [TransactionEntity]
+        let hasMore: Bool
+        let oldestDate: Date?
+    }
+
+    /// Cursor-based pagination for the Transactions feed.
+    /// Pass `beforeDate = nil` for the most-recent page; pass the previous
+    /// page's `oldestDate` to fetch the next older page. Sorted newest first.
+    func fetchPage(beforeDate: Date?, limit: Int = 100) -> Page {
+        var descriptor = FetchDescriptor<TransactionModel>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        if let beforeDate {
+            descriptor.predicate = #Predicate<TransactionModel> { m in
+                !m.isDeleted && !m.isHidden && m.date < beforeDate
+            }
+        } else {
+            descriptor.predicate = #Predicate<TransactionModel> { m in
+                !m.isDeleted && !m.isHidden
+            }
+        }
+        // Peek one extra to detect "more exist" without a separate count fetch.
+        descriptor.fetchLimit = limit + 1
+        do {
+            let models = try modelContext.fetch(descriptor)
+            let hasMore = models.count > limit
+            let pageModels = Array(models.prefix(limit))
+            return Page(
+                transactions: pageModels.map { $0.toEntity() },
+                hasMore: hasMore,
+                oldestDate: pageModels.last?.date
+            )
+        } catch {
+            assertionFailure("Failed to fetch transactions page: \(error)")
+            return Page(transactions: [], hasMore: false, oldestDate: nil)
+        }
+    }
+
     func fetchPendingReview() -> [TransactionEntity] {
         let descriptor = FetchDescriptor<TransactionModel>(
             predicate: #Predicate { !$0.isConfirmed && $0.confidence < 0.85 && !$0.isDeleted },
@@ -84,9 +127,11 @@ class TransactionRepositoryImpl {
         model.parentId = entity.parentId
         model.tags = entity.tags
         model.notes = entity.notes
+        model.accountId = entity.accountId
         model.receiptURL = entity.receiptURL
         model.upiRef = entity.upiRef
         model.bankRef = entity.bankRef
+        model.intentOverrideRaw = entity.intentOverride?.rawValue
         model.updatedAt = Date()
         persistChanges()
     }

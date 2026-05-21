@@ -211,6 +211,18 @@ struct TransactionFeedView: View {
                     ForEach(viewModel.groupedTransactions, id: \.key) { group in
                         transactionSection(group: group)
                     }
+                    if viewModel.isLoadingMore {
+                        HStack(spacing: Spacing.sm) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(Color.brandPrimary)
+                            Text("Loading more…")
+                                .font(.caption)
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Spacing.lg)
+                    }
                 }
 
                 // Bottom padding for FAB
@@ -388,6 +400,14 @@ struct TransactionFeedView: View {
                         }
                     )
                     .padding(.horizontal, Spacing.base)
+                    .onAppear {
+                        // Prefetch the next page when one of the last rows of
+                        // the currently-loaded set enters view, so the user
+                        // never hits an empty scroll.
+                        if viewModel.isNearEndOfLoadedSet(txn) {
+                            Task { await viewModel.loadMoreIfNeeded() }
+                        }
+                    }
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
                             withAnimation {

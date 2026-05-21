@@ -39,8 +39,23 @@ final class TransactionListViewModel {
     var showAddSheet: Bool = false
     var showFilterSheet: Bool = false
     var isLoading: Bool = false
+    /// Indicates an in-flight pagination fetch — used by the feed to show a
+    /// "Loading more…" spinner under the last group without blocking the UI.
+    var isLoadingMore: Bool = false
     /// Set after a bulk recategorization; the view shows a toast and then clears this.
     var bulkUpdateMessage: String? = nil
+
+    // MARK: - Pagination state
+    /// Date of the OLDEST transaction currently loaded. Passed to
+    /// `transactionRepo.fetchPage(beforeDate:)` to fetch the next older page.
+    private var oldestLoadedDate: Date? = nil
+    /// `true` while more older rows exist in the DB beyond what's currently
+    /// loaded. Flipped to `false` once we exhaust the table OR switch into
+    /// full-fetch mode (filters / search active).
+    private(set) var hasMorePages: Bool = false
+    /// Default page size — chosen to keep initial load fast on big histories
+    /// while still filling 1-2 screens of the feed for the average user.
+    private let pageSize = 100
 
     var hasActiveFilters: Bool {
         selectedCategory != nil || selectedSource != nil || selectedType != nil || !selectedTags.isEmpty
@@ -80,13 +95,62 @@ final class TransactionListViewModel {
         let accounts = accountRepo?.fetchAll() ?? []
         accountMap = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
 
-        allTransactions = transactionRepo.fetchAll()
+        // Initial fetch: when filters or search are active, the user expects
+        // the result set to span the entire history — fall back to full fetch.
+        // Otherwise start with a paginated first page; older rows load on
+        // scroll-end via `loadMoreIfNeeded`.
+        if hasActiveFilters || !searchText.isEmpty {
+            allTransactions = transactionRepo.fetchAll()
+            oldestLoadedDate = allTransactions.last?.date
+            hasMorePages = false
+        } else {
+            let page = transactionRepo.fetchPage(beforeDate: nil, limit: pageSize)
+            allTransactions = page.transactions
+            oldestLoadedDate = page.oldestDate
+            hasMorePages = page.hasMore
+        }
+
         pendingReviewTransactions = transactionRepo.fetchPendingReview()
         applyFilters()
     }
 
+    /// Loads the next older page when the feed scrolls near the bottom.
+    /// No-op when pagination is exhausted, a fetch is already in flight, or
+    /// the view is in filter/search mode (which holds the full result set).
+    func loadMoreIfNeeded() async {
+        guard hasMorePages, !isLoadingMore else { return }
+        guard !hasActiveFilters && searchText.isEmpty else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        let page = transactionRepo.fetchPage(beforeDate: oldestLoadedDate, limit: pageSize)
+        allTransactions.append(contentsOf: page.transactions)
+        oldestLoadedDate = page.oldestDate ?? oldestLoadedDate
+        hasMorePages = page.hasMore
+        applyFilters()
+    }
+
+    /// Returns true if the given transaction is among the trailing rows of
+    /// the currently-loaded set — used by the View to decide when to prefetch
+    /// the next page. Threshold keeps the user from ever seeing an empty scroll.
+    func isNearEndOfLoadedSet(_ transaction: TransactionEntity) -> Bool {
+        guard hasMorePages else { return false }
+        let prefetchThreshold = 15
+        guard let idx = allTransactions.firstIndex(where: { $0.id == transaction.id }) else { return false }
+        return idx >= allTransactions.count - prefetchThreshold
+    }
+
     // MARK: - Filter & Sort
     func applyFilters() {
+        // Filters/search must span the entire history. If we're currently
+        // holding a paginated subset, upgrade to a full fetch so the user
+        // doesn't get partial results. Falls back to no-op once already full.
+        if (hasActiveFilters || !searchText.isEmpty) && hasMorePages {
+            allTransactions = transactionRepo.fetchAll()
+            oldestLoadedDate = allTransactions.last?.date
+            hasMorePages = false
+        }
+
         var result = allTransactions
 
         // Search
