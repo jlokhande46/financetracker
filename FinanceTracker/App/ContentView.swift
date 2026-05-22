@@ -53,7 +53,9 @@ struct ContentView: View {
             // Create all VMs before any load so every tab shows its loading state immediately.
             let dvm = DashboardViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo,
                                          accountRepo: c.accountRepo, cardStatementRepo: c.cardStatementRepo,
-                                         goalRepo: c.goalRepo)
+                                         goalRepo: c.goalRepo,
+                                         recurringBillRepo: c.recurringBillRepo,
+                                         salaryWatcher: c.salaryWatcher)
             let avm = AnalyticsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
             let bvm = BudgetsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
 

@@ -16,6 +16,10 @@ final class DashboardViewModel {
     var isLoading: Bool = false
     var upcomingStatements: [CardStatementEntity] = []
     var smartInsights: [SmartInsight] = []
+    /// Bills unpaid for the current cycle — surfaces the Dashboard banner
+    /// when non-empty AND a salary credit has been detected in the last 30d.
+    var unpaidBills: [RecurringBillEntity] = []
+    var recentSalary: TransactionEntity? = nil
 
     // MARK: - Dependencies
     private let transactionRepo: TransactionRepositoryImpl
@@ -23,17 +27,23 @@ final class DashboardViewModel {
     private let accountRepo: AccountRepositoryImpl?
     private let cardStatementRepo: CardStatementRepositoryImpl?
     private let goalRepo: GoalRepositoryImpl?
+    private let recurringBillRepo: RecurringBillRepositoryImpl?
+    private let salaryWatcher: SalaryWatcher?
 
     init(transactionRepo: TransactionRepositoryImpl,
          budgetRepo: BudgetRepositoryImpl,
          accountRepo: AccountRepositoryImpl? = nil,
          cardStatementRepo: CardStatementRepositoryImpl? = nil,
-         goalRepo: GoalRepositoryImpl? = nil) {
+         goalRepo: GoalRepositoryImpl? = nil,
+         recurringBillRepo: RecurringBillRepositoryImpl? = nil,
+         salaryWatcher: SalaryWatcher? = nil) {
         self.transactionRepo   = transactionRepo
         self.budgetRepo        = budgetRepo
         self.accountRepo       = accountRepo
         self.cardStatementRepo = cardStatementRepo
         self.goalRepo          = goalRepo
+        self.recurringBillRepo = recurringBillRepo
+        self.salaryWatcher     = salaryWatcher
     }
 
     func markStatementPaid(_ id: UUID) {
@@ -99,6 +109,13 @@ final class DashboardViewModel {
     /// the "N due" badge in the My Cards section header.
     var unpaidStatementCount: Int { upcomingStatements.count }
 
+    /// Whether to show the Dashboard "Bills due" banner. Only fires post-
+    /// salary so the user isn't pinged about bills before they have money
+    /// in the account.
+    var shouldShowBillsBanner: Bool {
+        !unpaidBills.isEmpty && recentSalary != nil
+    }
+
     // MARK: - Insight dismissal (persisted via UserDefaults)
 
     private static let dismissedInsightsKey = "dismissedInsightIDs"
@@ -129,6 +146,8 @@ final class DashboardViewModel {
 
         accounts = accountRepo?.fetchAll() ?? []
         upcomingStatements = cardStatementRepo?.fetchUnpaid() ?? []
+        unpaidBills = recurringBillRepo?.fetchDueThisCycle() ?? []
+        recentSalary = salaryWatcher?.recentSalary()
 
         let monthTxns = transactionRepo.fetchForMonth(selectedMonth)
         let prevMonth = Calendar.current.date(byAdding: .month, value: -1, to: selectedMonth) ?? selectedMonth

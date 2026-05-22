@@ -8,7 +8,10 @@ struct DashboardView: View {
     @State private var showQuickReview = false
     @State private var selectedAccount: AccountEntity? = nil
     @State private var showAllMerchants = false
+    @State private var showBillsSheet = false
+    @State private var billsViewModel: RecurringBillsViewModel? = nil
     @AppStorage("hideAmounts") private var hideAmounts: Bool = false
+    @Environment(\.appContainer) private var container
 
     var body: some View {
         NavigationStack {
@@ -65,6 +68,22 @@ struct DashboardView: View {
                     AllMerchantsSheet(merchants: analysis.topMerchants)
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
+                }
+            }
+            .sheet(isPresented: $showBillsSheet) {
+                if let bvm = billsViewModel {
+                    NavigationStack {
+                        ScrollView {
+                            RecurringBillsSection(viewModel: bvm)
+                                .padding(.top, Spacing.md)
+                        }
+                        .background(Color.bgPrimary.ignoresSafeArea())
+                        .navigationTitle("Recurring Bills")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .onDisappear { Task { await viewModel.load() } }
                 }
             }
             .onAppear {
@@ -151,6 +170,15 @@ struct DashboardView: View {
                         .animation(.easeOut(duration: 0.4).delay(0.1), value: appearAnimation)
                 }
 
+                // Bills-due banner — only after salary lands, so the user
+                // isn't told "go pay bills" before there's money to do it.
+                if viewModel.shouldShowBillsBanner {
+                    billsDueBanner
+                        .padding(.horizontal, Spacing.base)
+                        .opacity(appearAnimation ? 1 : 0)
+                        .animation(.easeOut(duration: 0.4).delay(0.12), value: appearAnimation)
+                }
+
                 // Insights horizontal scroll
                 if !viewModel.visibleInsights.isEmpty {
                     insightsSection
@@ -208,6 +236,69 @@ struct DashboardView: View {
         } else {
             emptyState
         }
+    }
+
+    // MARK: - Bills Due Banner (post-salary)
+
+    private var billsDueBanner: some View {
+        Button(action: openBillsSheet) {
+            HStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(Color.brandPrimary.opacity(0.2))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "calendar.badge.exclamationmark")
+                        .font(.system(size: 16))
+                        .foregroundColor(.brandPrimary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(viewModel.unpaidBills.count) bill\(viewModel.unpaidBills.count == 1 ? "" : "s") to pay")
+                        .font(.titleMedium)
+                        .foregroundColor(.textPrimary)
+                    Text(billsBannerSubtitle)
+                        .font(.caption)
+                        .foregroundColor(.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.textSecondary)
+            }
+            .padding(Spacing.base)
+            .background(Color.brandPrimary.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(Color.brandPrimary.opacity(0.3), lineWidth: 1)
+            )
+            .cornerRadius(Radius.lg)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var billsBannerSubtitle: String {
+        let next = viewModel.unpaidBills
+            .sorted { $0.daysUntilDue < $1.daysUntilDue }
+            .first
+        guard let next else { return "Salary credited — tap to settle" }
+        if next.isOverdue { return "\(next.name) is overdue · tap to settle" }
+        if next.daysUntilDue == 0 { return "\(next.name) due today · tap to settle" }
+        return "\(next.name) due in \(next.daysUntilDue)d · tap to settle"
+    }
+
+    private func openBillsSheet() {
+        if billsViewModel == nil, let c = container {
+            billsViewModel = RecurringBillsViewModel(
+                billRepo: c.recurringBillRepo,
+                transactionRepo: c.transactionRepo,
+                salaryWatcher: c.salaryWatcher
+            )
+        }
+        billsViewModel?.load()
+        showBillsSheet = true
     }
 
     // MARK: - Pending Review Banner

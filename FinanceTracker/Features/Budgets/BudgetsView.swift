@@ -4,11 +4,22 @@ struct BudgetsView: View {
 
     @State var viewModel: BudgetsViewModel
     @State private var goalsViewModel: GoalsViewModel?
+    @State private var billsViewModel: RecurringBillsViewModel?
     @State private var appearAnimation = false
     @State private var budgetToDelete: BudgetEntity?
     @State private var showDeleteConfirm = false
 
     @Environment(\.appContainer) private var container
+
+    /// True only when budgets, goals, AND bills are all empty. Since bills
+    /// are seeded on first launch, this is normally false from day one —
+    /// the empty hero state only shows after the user has actively wiped
+    /// everything (Clear All Data + delete all bills + delete all goals).
+    private var isCompletelyEmpty: Bool {
+        viewModel.budgets.isEmpty
+            && (goalsViewModel?.goals.isEmpty ?? true)
+            && (billsViewModel?.bills.isEmpty ?? true)
+    }
 
     var body: some View {
         NavigationStack {
@@ -18,7 +29,7 @@ struct BudgetsView: View {
                 Group {
                     if viewModel.isLoading {
                         loadingState
-                    } else if viewModel.budgets.isEmpty && (goalsViewModel?.goals.isEmpty ?? true) {
+                    } else if isCompletelyEmpty {
                         emptyState
                     } else {
                         budgetList
@@ -26,7 +37,7 @@ struct BudgetsView: View {
                 }
 
                 // FAB
-                if !viewModel.budgets.isEmpty || !(goalsViewModel?.goals.isEmpty ?? true) {
+                if !isCompletelyEmpty {
                     addButton
                         .padding(Spacing.xl)
                 }
@@ -38,6 +49,14 @@ struct BudgetsView: View {
                     goalsViewModel = GoalsViewModel(repo: c.goalRepo)
                 }
                 goalsViewModel?.load()
+                if billsViewModel == nil, let c = container {
+                    billsViewModel = RecurringBillsViewModel(
+                        billRepo: c.recurringBillRepo,
+                        transactionRepo: c.transactionRepo,
+                        salaryWatcher: c.salaryWatcher
+                    )
+                }
+                billsViewModel?.load()
             }
             .sheet(isPresented: Binding(
                 get: { viewModel.showCreateSheet },
@@ -103,6 +122,14 @@ struct BudgetsView: View {
                                 }
                         }
                     }
+                }
+
+                // Recurring bills section — sits between budgets and goals so
+                // financial obligations cluster together (spend caps → upcoming
+                // payments → savings targets).
+                if let bvm = billsViewModel {
+                    RecurringBillsSection(viewModel: bvm)
+                        .padding(.top, Spacing.lg)
                 }
 
                 // Goals section
