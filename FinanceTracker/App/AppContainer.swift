@@ -10,7 +10,9 @@ class AppContainer {
     let budgetRepo: BudgetRepositoryImpl
     let cardStatementRepo: CardStatementRepositoryImpl
     let goalRepo: GoalRepositoryImpl
+    let recurringBillRepo: RecurringBillRepositoryImpl
     let billCycleManager: BillCycleManager
+    let salaryWatcher: SalaryWatcher
 
     init(modelContext: ModelContext) {
         self.transactionRepo     = TransactionRepositoryImpl(modelContext: modelContext)
@@ -18,10 +20,15 @@ class AppContainer {
         self.budgetRepo          = BudgetRepositoryImpl(modelContext: modelContext)
         self.cardStatementRepo   = CardStatementRepositoryImpl(modelContext: modelContext)
         self.goalRepo            = GoalRepositoryImpl(modelContext: modelContext)
+        self.recurringBillRepo   = RecurringBillRepositoryImpl(modelContext: modelContext)
         self.billCycleManager    = BillCycleManager(
             accountRepo: accountRepo,
             statementRepo: cardStatementRepo,
             transactionRepo: transactionRepo
+        )
+        self.salaryWatcher       = SalaryWatcher(
+            transactionRepo: transactionRepo,
+            recurringBillRepo: recurringBillRepo
         )
 
         // Always sync user's real cards so account auto-linking works
@@ -33,10 +40,16 @@ class AppContainer {
         if !seedDisabled {
             transactionRepo.seedSampleData()
         }
+        // Seed the user's five common recurring bills if they have none yet.
+        // Skipped silently on subsequent launches (count > 0 guard inside).
+        recurringBillRepo.seedDefaultsIfNeeded()
 
         // Run the bill-cycle sweep so any overdue statements are created and any
         // already-paid ones get marked.
         billCycleManager.runDailySweep()
+        // Check whether a recent salary should kick off bill reminders for any
+        // cycle still unpaid.
+        salaryWatcher.handleStateChange()
     }
 
     /// Drains any SMS texts queued by `LogBankSMSIntent` (the App Intent that
@@ -145,6 +158,10 @@ class AppContainer {
 
         if savedAny {
             billCycleManager.handleTransactionChange()
+            // A newly-saved salary credit should kick off bill reminders; a
+            // newly-saved expense should refresh the unpaid set in case the
+            // user paid a bill via this SMS.
+            salaryWatcher.handleStateChange()
         }
     }
 
@@ -186,12 +203,15 @@ class AppContainer {
         budgetRepo.deleteAll()
         cardStatementRepo.deleteAll()
         goalRepo.deleteAll()
+        recurringBillRepo.deleteAll()
         MerchantRuleStore.shared.deleteAll()
         NotificationManager.shared.cancelAll()
+        SalaryWatcher.resetSalaryAnnouncementDedup()
         UserDefaults.standard.set(true, forKey: "seedDisabled")
-        // Re-seed user's real cards immediately. clearAllData should reset the
-        // app's learned state, NOT remove the user's bank accounts.
+        // Re-seed user's real cards + recurring bills immediately. clearAllData
+        // should reset the app's learned state, NOT remove the standing setup.
         accountRepo.syncUserCards()
+        recurringBillRepo.seedDefaultsIfNeeded()
     }
 }
 

@@ -216,6 +216,143 @@ final class NotificationManager: NSObject {
         UNUserNotificationCenter.current().add(request)
     }
 
+    // MARK: - Recurring-bill reminders
+
+    /// Max trailing-days window for a per-bill reminder schedule. With up to
+    /// ~6 bills × 14 daily slots + 3 PM-extras + 1 salary alert ≈ 88 pending
+    /// requests — well under iOS's 64-per-bundle cap once the daily sweep
+    /// trims old slots as they fire. We keep the window tighter than the CC
+    /// schedule (21d) since bills typically have shorter pay-after-salary
+    /// windows.
+    private static let billReminderWindow = 14
+    private static let billExtraPMTrailingDays = 3
+
+    /// Rebuilds the schedule for each unpaid bill. Cancels old pending
+    /// requests per bill first, so calling this on every state change won't
+    /// stack duplicates.
+    func scheduleBillReminders(_ bills: [RecurringBillEntity]) {
+        for bill in bills {
+            scheduleBillReminder(bill)
+        }
+    }
+
+    private func scheduleBillReminder(_ bill: RecurringBillEntity) {
+        cancelBillReminders(billId: bill.id)
+        guard bill.isDueThisCycle else { return }
+
+        let center = UNUserNotificationCenter.current()
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let due   = cal.startOfDay(for: bill.nextDueDate)
+        let daysToDue = cal.dateComponents([.day], from: today, to: due).day ?? 0
+        // Clamp negative (overdue) to 0 so the loop still fires today.
+        let usableDays = max(0, daysToDue)
+        let amCap = min(usableDays, Self.billReminderWindow)
+
+        for offset in 0...amCap {
+            guard let fireDate = cal.date(byAdding: .day, value: offset, to: today) else { continue }
+            buildBillNotification(
+                bill: bill, fireDate: fireDate, hour: 10, slot: "am",
+                offset: offset, daysLeft: usableDays - offset,
+                isOverdue: bill.isOverdue && offset == 0,
+                center: center
+            )
+        }
+
+        // Extra 6 PM reminders for the last 3 days before due (skip the due
+        // day itself — the AM timeSensitive one covers it).
+        let pmStart = max(0, usableDays - Self.billExtraPMTrailingDays + 1)
+        if pmStart < usableDays {
+            for offset in pmStart..<usableDays {
+                guard let fireDate = cal.date(byAdding: .day, value: offset, to: today) else { continue }
+                buildBillNotification(
+                    bill: bill, fireDate: fireDate, hour: 18, slot: "pm",
+                    offset: offset, daysLeft: usableDays - offset,
+                    isOverdue: false, center: center
+                )
+            }
+        }
+    }
+
+    private func buildBillNotification(
+        bill: RecurringBillEntity,
+        fireDate: Date,
+        hour: Int,
+        slot: String,
+        offset: Int,
+        daysLeft: Int,
+        isOverdue: Bool,
+        center: UNUserNotificationCenter
+    ) {
+        var components = Calendar.current.dateComponents([.year, .month, .day], from: fireDate)
+        components.hour = hour
+        components.minute = 0
+
+        let content = UNMutableNotificationContent()
+        content.title = bill.name
+        content.sound = .default
+        content.threadIdentifier = "bill-\(bill.id.uuidString)"
+
+        let amountPart: String
+        if let amt = bill.amount {
+            amountPart = "₹\(formattedAmount(amt))"
+        } else {
+            amountPart = "Payment"
+        }
+        if isOverdue {
+            content.body = "\(amountPart) is OVERDUE — tap to mark paid."
+            content.interruptionLevel = .timeSensitive
+        } else {
+            switch daysLeft {
+            case 0:
+                content.body = "\(amountPart) due TODAY — tap to mark paid."
+                content.interruptionLevel = .timeSensitive
+            case 1:
+                content.body = "\(amountPart) due tomorrow."
+                if slot == "pm" { content.interruptionLevel = .timeSensitive }
+            default:
+                content.body = "\(amountPart) due in \(daysLeft) days."
+            }
+        }
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let id = billNotificationId(bill.id, offset: offset, slot: slot)
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+    }
+
+    func cancelBillReminders(billId: UUID) {
+        var ids: [String] = []
+        for offset in 0...Self.billReminderWindow {
+            ids.append(billNotificationId(billId, offset: offset, slot: "am"))
+            ids.append(billNotificationId(billId, offset: offset, slot: "pm"))
+        }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
+    func cancelAllBillReminders(billIds: [UUID]) {
+        for id in billIds { cancelBillReminders(billId: id) }
+    }
+
+    /// One-shot "Salary credited — N bills due" alert fired by SalaryWatcher
+    /// the first time a given salary credit is observed.
+    func fireSalaryDetectedAlert(unpaidBillCount: Int) {
+        guard unpaidBillCount > 0 else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Salary credited"
+        content.body = "\(unpaidBillCount) bill\(unpaidBillCount == 1 ? "" : "s") to pay this cycle. Tap Bills to settle."
+        content.sound = .default
+        content.threadIdentifier = "salary-detected"
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        let id = "salary_detected_\(Int(Date().timeIntervalSince1970))"
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        )
+    }
+
+    private func billNotificationId(_ billId: UUID, offset: Int, slot: String) -> String {
+        "bill_\(billId.uuidString)_d\(offset)_\(slot)"
+    }
+
     // MARK: - Budget alerts
 
     /// Checks every active budget and fires a notification when it crosses 80 % or 100 %.
