@@ -45,16 +45,26 @@ class AppContainer {
     ///
     /// Duplicates are suppressed: an SMS already saved within the last 2 minutes
     /// is skipped (same dedup window as the URL-scheme deep-link path).
+    ///
+    /// Each queued item carries its `enqueuedAt` timestamp from when the
+    /// Shortcut/URL fired — the saved transaction's `date` is derived from
+    /// it whenever the parsed SMS lacks a time component, and `createdAt`
+    /// is always set to it. This preserves the *sequence* of multiple SMS
+    /// processed in one batch (e.g. user opens the app after lunch and
+    /// 3 queued bank texts drain — they line up in arrival order instead
+    /// of all sharing the moment-of-app-open timestamp).
     func processPendingSMS() {
-        let pending = PendingSMSStore.drainQueue()
-        guard !pending.isEmpty else { return }
+        let items = PendingSMSStore.drainItems()
+        guard !items.isEmpty else { return }
 
         let existing = transactionRepo.fetchAll()
         let now = Date()
         var savedAny = false
 
-        for text in pending {
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Items in arrival order — use index to stagger sub-second offsets
+        // when multiple items share the same enqueuedAt timestamp (rare).
+        for (index, item) in items.enumerated() {
+            let trimmed = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
             // Skip if the exact same SMS was saved in the last 2 minutes.
@@ -80,32 +90,72 @@ class AppContainer {
                 accounts: accountRepo.fetchAll()
             )
 
+            // Bump createdAt by the queue index so a batch arriving with the
+            // same enqueuedAt (back-to-back Shortcut fires) still sorts in
+            // arrival order on createdAt rather than collapsing onto one
+            // instant.
+            let createdAt = item.enqueuedAt.addingTimeInterval(TimeInterval(index) * 0.001)
+            let transactionDate = resolveTransactionDate(
+                parsed: result.date,
+                enqueuedAt: createdAt
+            )
+
             let entity = TransactionEntity(
                 amount: result.amount,
                 type: result.type,
                 merchantRaw: result.merchantRaw,
                 merchantName: merchant.isEmpty ? result.merchantRaw : merchant,
                 categorySlug: classification.categorySlug,
-                date: result.date ?? now,
+                date: transactionDate,
                 source: .sms,
                 confidence: classification.confidence,
                 isConfirmed: true,
                 accountId: autoAccount?.id,
                 upiRef: result.upiRef,
                 bankRef: result.bankRef,
-                rawContent: trimmed
+                rawContent: trimmed,
+                createdAt: createdAt
             )
             transactionRepo.save(entity)
-            // Surface a local notification so the user knows the background
-            // save happened. When confidence is low, the alert body nudges
-            // toward Quick Review so the row doesn't sit forgotten.
-            NotificationManager.shared.fireTransactionSavedAlert(for: entity)
+            // Arrival notification has already fired (from LogBankSMSIntent
+            // or DeepLinkHandler). Only re-notify if the saved row needs
+            // review — surfaces low-confidence categorisations the user
+            // would otherwise miss in the feed.
+            NotificationManager.shared.fireTransactionNeedsReviewAlert(for: entity)
             savedAny = true
         }
 
         if savedAny {
             billCycleManager.handleTransactionChange()
         }
+    }
+
+    /// Build the persisted `date` for an SMS-derived transaction so the row
+    /// sorts correctly in the feed.
+    ///
+    /// - If the SMS parser captured a full datetime (e.g. Federal Bank Sent,
+    ///   HDFC CC Spent), we use it as-is — it's the most accurate.
+    /// - If the SMS captured only a date (most banks), we keep the parsed
+    ///   day-of-month but graft the receipt time-of-day on top, so two SMS
+    ///   arriving 30s apart on the same calendar date don't collapse onto
+    ///   midnight (which would lose sequence).
+    /// - If parsing produced no date at all, fall back to the queue
+    ///   timestamp.
+    private func resolveTransactionDate(parsed: Date?, enqueuedAt: Date) -> Date {
+        guard let parsed else { return enqueuedAt }
+        let cal = Calendar.current
+        let comps = cal.dateComponents([.hour, .minute, .second], from: parsed)
+        let hasTime = (comps.hour ?? 0) != 0 || (comps.minute ?? 0) != 0 || (comps.second ?? 0) != 0
+        if hasTime { return parsed }
+        // Date-only SMS: combine parsed Y/M/D with the queue's H/M/S so the
+        // row keeps its real calendar date but still has a meaningful time
+        // of day for sequencing.
+        var ymd = cal.dateComponents([.year, .month, .day], from: parsed)
+        let hms = cal.dateComponents([.hour, .minute, .second], from: enqueuedAt)
+        ymd.hour = hms.hour
+        ymd.minute = hms.minute
+        ymd.second = hms.second
+        return cal.date(from: ymd) ?? enqueuedAt
     }
 
     /// Permanently delete every transaction, account, budget, merchant rule, and statement.

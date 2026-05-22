@@ -152,35 +152,64 @@ final class NotificationManager: NSObject {
 
     // MARK: - SMS / background-saved transaction alerts
 
-    /// Posts a local notification after `AppContainer.processPendingSMS` (or
-    /// the URL-scheme path) saves a transaction silently in the background.
-    /// When the saved row has low confidence (`confidence < 0.85`) the alert
-    /// nudges the user to review it; otherwise it's a passive confirmation.
-    func fireTransactionSavedAlert(for transaction: TransactionEntity) {
-        let needsReview = transaction.confidence < 0.85
+    /// Fired immediately by `LogBankSMSIntent` (background, even with phone
+    /// locked) and by `DeepLinkHandler` (URL-scheme path) the moment a bank
+    /// SMS lands in the queue. Lets the user see that the automation caught
+    /// the SMS in real time — they don't have to open the app to find out.
+    ///
+    /// `parsed` is the SMSParser output if it succeeded; nil means the SMS
+    /// didn't match any known bank format and will sit in the queue until
+    /// the user opens the app to deal with it.
+    func fireSMSReceivedAlert(parsed: ParsedSMSResult?, rawText: String) {
+        let content = UNMutableNotificationContent()
+        content.sound = .default
+        content.threadIdentifier = "sms-received"
+
+        if let parsed {
+            let merchantNorm = MerchantNormalizer.shared.normalize(parsed.merchantRaw)
+            let displayMerchant = (merchantNorm.isEmpty ? parsed.merchantRaw : merchantNorm)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let safeMerchant = displayMerchant.isEmpty ? "Unknown" : displayMerchant
+            let sign = parsed.type == .credit ? "+" : "-"
+            content.title = "Logged from SMS"
+            content.body = "\(sign)₹\(formattedAmount(parsed.amount)) \(safeMerchant)"
+        } else {
+            content.title = "SMS received — couldn't parse"
+            content.body = "Open FinanceTracker to log this transaction manually."
+            content.interruptionLevel = .timeSensitive
+        }
+
+        // Fire ASAP — UNTimeIntervalNotificationTrigger minimum is ~1s when
+        // not in a notification service extension, so anything < 1 actually
+        // resolves to the floor. Keep it short and let iOS deliver.
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let id = "sms_received_\(abs(rawText.hashValue))"
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Follow-up alert fired by `AppContainer.processPendingSMS` only when a
+    /// saved transaction came back with low confidence — the row is sitting
+    /// in the feed and the user should review it before it gets forgotten.
+    /// High-confidence saves don't re-notify; the arrival alert is enough.
+    func fireTransactionNeedsReviewAlert(for transaction: TransactionEntity) {
+        guard transaction.confidence < 0.85 else { return }
         let merchant = transaction.merchantName.isEmpty
             ? transaction.merchantRaw
             : transaction.merchantName
         let displayMerchant = merchant.isEmpty ? "Unknown" : merchant
-        let amount = "₹\(formattedAmount(transaction.amount))"
         let sign = transaction.isCredit ? "+" : "-"
 
         let content = UNMutableNotificationContent()
         content.sound = .default
-        content.threadIdentifier = "sms-saved"
-        if needsReview {
-            content.title = "Transaction needs review"
-            content.body = "\(sign)\(amount) \(displayMerchant) — tap to confirm category"
-        } else {
-            content.title = "Transaction saved"
-            content.body = "\(sign)\(amount) \(displayMerchant)"
-        }
+        content.threadIdentifier = "sms-received"
+        content.title = "Transaction needs review"
+        content.body = "\(sign)₹\(formattedAmount(transaction.amount)) \(displayMerchant) — tap to confirm category"
 
-        // 2-second delay so multiple saves in the same drain don't fire as a
-        // simultaneous stack on the lock screen.
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false)
+        // 3s delay so it lands after the arrival alert and not as a stack.
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)
         let request = UNNotificationRequest(
-            identifier: "txn_saved_\(transaction.id.uuidString)",
+            identifier: "txn_review_\(transaction.id.uuidString)",
             content: content,
             trigger: trigger
         )

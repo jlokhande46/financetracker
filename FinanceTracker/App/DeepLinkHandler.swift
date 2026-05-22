@@ -34,7 +34,14 @@ final class DeepLinkHandler {
         }
         lastHandledHash = hash
         lastHandledAt = now
-        PendingSMSStore.enqueue(sms)
+        PendingSMSStore.enqueue(sms, at: now)
+
+        // Immediate user feedback — the URL-scheme path lands here while the
+        // app is foregrounded (the Shortcut "Open URL" step woke us up), so
+        // post the same arrival alert the App Intent path posts. The actual
+        // save happens a moment later in AppContainer.processPendingSMS.
+        let parsed = SMSParser.shared.parse(sms)
+        NotificationManager.shared.fireSMSReceivedAlert(parsed: parsed, rawText: sms)
         return true
     }
 }

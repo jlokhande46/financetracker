@@ -1,4 +1,5 @@
 import AppIntents
+import Foundation
 
 /// An App Intent that receives a bank SMS text and queues it for FinanceTracker to process.
 ///
@@ -6,6 +7,11 @@ import AppIntents
 /// without launching the app UI — so it works even when the iPhone is locked. The SMS is
 /// written to a shared App Group UserDefaults queue; the main app drains the queue and
 /// saves transactions the next time it enters the foreground.
+///
+/// Immediately after enqueueing, the intent posts a local notification with the
+/// parsed amount + merchant so the user gets real-time feedback that the
+/// automation caught the SMS — instead of only finding out the next time
+/// they open the app.
 ///
 /// ## Shortcuts setup (replaces the old "Open URL" approach)
 ///
@@ -30,7 +36,20 @@ struct LogBankSMSIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         let text = smsText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return .result() }
-        PendingSMSStore.enqueue(text)
+
+        let now = Date()
+        PendingSMSStore.enqueue(text, at: now)
+
+        // Parse + normalise so the immediate alert can preview the amount and
+        // merchant. SMSParser / MerchantNormalizer don't depend on a SwiftData
+        // context, so they work inside the intent process. Classification
+        // (CategoryClassifier) DOES need MerchantRuleStore's model context,
+        // so the saved transaction's category is still computed by the main
+        // app — the notification just shows what the SMS contained.
+        let parsed = SMSParser.shared.parse(text)
+        await MainActor.run {
+            NotificationManager.shared.fireSMSReceivedAlert(parsed: parsed, rawText: text)
+        }
         return .result()
     }
 }
