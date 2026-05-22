@@ -11,6 +11,7 @@ struct DeveloperOptionsView: View {
     @State private var editingRule: MerchantRuleStore.RuleSnapshot? = nil
     @State private var ruleToDelete: MerchantRuleStore.RuleSnapshot? = nil
     @State private var showDeleteAllRulesAlert = false
+    @State private var showSMSActivity = false
     @State private var searchText = ""
     @State private var toastMessage: String = ""
     @State private var showToast: Bool = false
@@ -31,6 +32,7 @@ struct DeveloperOptionsView: View {
                 Color.bgPrimary.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: Spacing.xl) {
+                        smsActivitySection
                         merchantRulesSection
                         diagnosticsSection
                         dangerSection
@@ -51,6 +53,11 @@ struct DeveloperOptionsView: View {
             }
             .searchable(text: $searchText, prompt: "Search rules")
             .onAppear { load() }
+            .sheet(isPresented: $showSMSActivity) {
+                SMSActivityView()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
             .sheet(item: $editingRule) { rule in
                 EditMerchantRuleSheet(rule: rule) { newSlug, newName in
                     MerchantRuleStore.shared.updateRule(
@@ -93,6 +100,57 @@ struct DeveloperOptionsView: View {
             }
         }
         .toast(isPresented: $showToast, message: toastMessage, type: .success)
+    }
+
+    // MARK: - SMS Activity section (entry point to full log)
+
+    private var smsActivitySection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("SMS PIPELINE")
+                .font(.micro)
+                .foregroundStyle(Color.textSecondary)
+                .kerning(1.2)
+
+            Button {
+                showSMSActivity = true
+            } label: {
+                HStack(spacing: Spacing.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Radius.sm)
+                            .fill(Color.brandPrimary.opacity(0.15))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "tray.full.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.brandPrimary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("SMS Activity")
+                            .font(.bodyMedium)
+                            .foregroundStyle(Color.textPrimary)
+                        Text(audiTraceSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(Color.textSecondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.textTertiary)
+                }
+                .padding(Spacing.base)
+                .background(Color.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var audiTraceSubtitle: String {
+        let total = SMSAuditStore.count
+        if total == 0 {
+            return "No activity yet — fire your Shortcut to see entries appear."
+        }
+        return "\(total) event\(total == 1 ? "" : "s") logged · automation → queue → save trace"
     }
 
     // MARK: - Merchant rules section
@@ -371,10 +429,7 @@ struct DeveloperOptionsView: View {
     private var budgetCount: Int       { container?.budgetRepo.fetchAll().count ?? 0 }
     private var goalCount: Int         { container?.goalRepo.fetchAll().count ?? 0 }
     private var cardStatementCount: Int { container?.cardStatementRepo.fetchAll().count ?? 0 }
-    private var pendingSMSCount: Int {
-        UserDefaults(suiteName: PendingSMSStore.appGroupSuite)?
-            .stringArray(forKey: "pendingSMSQueue")?.count ?? 0
-    }
+    private var pendingSMSCount: Int { PendingSMSStore.pendingCount }
     private var dismissedInsightsCount: Int {
         (UserDefaults.standard.array(forKey: "dismissedInsightIDs") as? [String])?.count ?? 0
     }

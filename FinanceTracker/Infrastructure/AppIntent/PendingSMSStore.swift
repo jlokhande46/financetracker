@@ -34,9 +34,14 @@ enum PendingSMSStore {
     static func enqueue(_ text: String, at date: Date = Date()) {
         guard let defaults = store() else { return }
         var items = readItems(defaults: defaults)
-        guard !items.contains(where: { $0.text == text }) else { return }
+        guard !items.contains(where: { $0.text == text }) else {
+            SMSAuditStore.record(.enqueueDeduped, text: text, at: date,
+                                 detail: "Same text already in queue, not re-added.")
+            return
+        }
         items.append(Item(text: text, enqueuedAt: date))
         writeItems(items, defaults: defaults)
+        SMSAuditStore.record(.enqueued, text: text, at: date)
     }
 
     /// Returns all queued items in arrival order and clears the queue

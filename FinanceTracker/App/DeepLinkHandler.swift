@@ -30,10 +30,13 @@ final class DeepLinkHandler {
         let hash = sms.hashValue
         let now = Date()
         if hash == lastHandledHash && now.timeIntervalSince(lastHandledAt) < 10 {
+            SMSAuditStore.record(.enqueueDeduped, text: sms, at: now,
+                                 detail: "URL re-fired within 10s window.")
             return false
         }
         lastHandledHash = hash
         lastHandledAt = now
+        SMSAuditStore.record(.receivedViaURL, text: sms, at: now)
         PendingSMSStore.enqueue(sms, at: now)
 
         // Immediate user feedback — the URL-scheme path lands here while the
@@ -41,6 +44,10 @@ final class DeepLinkHandler {
         // post the same arrival alert the App Intent path posts. The actual
         // save happens a moment later in AppContainer.processPendingSMS.
         let parsed = SMSParser.shared.parse(sms)
+        if parsed == nil {
+            SMSAuditStore.record(.parseFailed, text: sms, at: now,
+                                 detail: "No known bank format matched (URL handler).")
+        }
         NotificationManager.shared.fireSMSReceivedAlert(parsed: parsed, rawText: sms)
         return true
     }

@@ -38,6 +38,7 @@ struct LogBankSMSIntent: AppIntent {
         guard !text.isEmpty else { return .result() }
 
         let now = Date()
+        SMSAuditStore.record(.receivedViaIntent, text: text, at: now)
         PendingSMSStore.enqueue(text, at: now)
 
         // Parse + normalise so the immediate alert can preview the amount and
@@ -47,6 +48,10 @@ struct LogBankSMSIntent: AppIntent {
         // so the saved transaction's category is still computed by the main
         // app — the notification just shows what the SMS contained.
         let parsed = SMSParser.shared.parse(text)
+        if parsed == nil {
+            SMSAuditStore.record(.parseFailed, text: text, at: now,
+                                 detail: "No known bank format matched (intent-time preview).")
+        }
         await MainActor.run {
             NotificationManager.shared.fireSMSReceivedAlert(parsed: parsed, rawText: text)
         }

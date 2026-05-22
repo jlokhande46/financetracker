@@ -71,9 +71,17 @@ class AppContainer {
             let isDuplicate = existing.contains { txn in
                 txn.rawContent == trimmed && abs(now.timeIntervalSince(txn.createdAt)) < 120
             }
-            guard !isDuplicate else { continue }
+            guard !isDuplicate else {
+                SMSAuditStore.record(.savedDeduped, text: trimmed, at: now,
+                                     detail: "Identical rawContent saved within last 2 minutes.")
+                continue
+            }
 
-            guard let result = SMSParser.shared.parse(trimmed) else { continue }
+            guard let result = SMSParser.shared.parse(trimmed) else {
+                SMSAuditStore.record(.parseFailed, text: trimmed, at: now,
+                                     detail: "Main-app parse retry also returned nil.")
+                continue
+            }
 
             let merchant = MerchantNormalizer.shared.normalize(result.merchantRaw)
             let classification = CategoryClassifier.shared.classify(
@@ -122,6 +130,16 @@ class AppContainer {
             // review — surfaces low-confidence categorisations the user
             // would otherwise miss in the feed.
             NotificationManager.shared.fireTransactionNeedsReviewAlert(for: entity)
+            SMSAuditStore.record(
+                .savedAsTransaction, text: trimmed, at: createdAt,
+                detail: String(
+                    format: "%@ ₹%@ · %@ · conf %.0f%%",
+                    entity.isCredit ? "+" : "-",
+                    "\(entity.amount)",
+                    entity.merchantName.isEmpty ? entity.merchantRaw : entity.merchantName,
+                    entity.confidence * 100
+                )
+            )
             savedAny = true
         }
 
