@@ -38,15 +38,27 @@ struct TransactionRowView: View {
         transaction.isCredit ? .incomeGreen : .textPrimary
     }
 
+    // Reused across every row render — NumberFormatter / DateFormatter init
+    // is genuinely slow (CFLocale setup) and was a measurable source of
+    // scroll-time jank when each row instantiated its own per render.
+    private static let amountFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencySymbol = "₹"
+        f.minimumFractionDigits = 0
+        f.maximumFractionDigits = 2
+        f.groupingSeparator = ","
+        f.usesGroupingSeparator = true
+        return f
+    }()
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
     private var formattedAmount: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencySymbol = "₹"
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 2
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        let str = formatter.string(from: transaction.amount as NSDecimalNumber) ?? "₹\(transaction.amount)"
+        let str = Self.amountFormatter.string(from: transaction.amount as NSDecimalNumber) ?? "₹\(transaction.amount)"
         return transaction.isCredit ? "+\(str)" : str
     }
 
@@ -54,9 +66,7 @@ struct TransactionRowView: View {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: transaction.date)
         // Hide midnight (PDF imports default to 00:00 — meaningless to display)
         if comps.hour == 0 && comps.minute == 0 { return nil }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: transaction.date)
+        return Self.timeFormatter.string(from: transaction.date)
     }
 
     var body: some View {
@@ -328,15 +338,19 @@ struct TransactionSectionHeader: View {
         isExpense ? .expenseRed : .incomeGreen
     }
 
+    private static let totalFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencySymbol = "₹"
+        f.minimumFractionDigits = 0
+        f.maximumFractionDigits = 0
+        f.groupingSeparator = ","
+        f.usesGroupingSeparator = true
+        return f
+    }()
+
     private var formattedTotal: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencySymbol = "₹"
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 0
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        return formatter.string(from: total as NSDecimalNumber) ?? "₹\(total)"
+        Self.totalFormatter.string(from: total as NSDecimalNumber) ?? "₹\(total)"
     }
 
     var body: some View {

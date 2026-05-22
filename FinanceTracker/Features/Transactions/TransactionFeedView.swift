@@ -547,13 +547,17 @@ private struct PendingReviewCard: View {
     let transaction: TransactionEntity
     let onTap: () -> Void
 
+    private static let amountFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencySymbol = "₹"
+        f.minimumFractionDigits = 0
+        f.maximumFractionDigits = 0
+        return f
+    }()
+
     private var formattedAmount: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencySymbol = "₹"
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: transaction.amount as NSDecimalNumber) ?? "₹\(transaction.amount)"
+        Self.amountFormatter.string(from: transaction.amount as NSDecimalNumber) ?? "₹\(transaction.amount)"
     }
 
     var body: some View {
