@@ -10,6 +10,7 @@ struct DashboardView: View {
     @State private var showAllMerchants = false
     @State private var showBillsSheet = false
     @State private var billsViewModel: RecurringBillsViewModel? = nil
+    @State private var statementToMarkPaid: CardStatementEntity? = nil
     @AppStorage("hideAmounts") private var hideAmounts: Bool = false
     @Environment(\.appContainer) private var container
 
@@ -69,6 +70,18 @@ struct DashboardView: View {
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
                 }
+            }
+            .sheet(item: $statementToMarkPaid) { stmt in
+                MarkBillPaidSheet(
+                    title: "Mark \(stmt.accountName) Paid",
+                    subtitle: "Pick the payment transaction (debit from savings to this card) of about \(stmt.totalDue.currencyString), or mark paid without linking.",
+                    candidates: viewModel.ccPaymentCandidates(for: stmt),
+                    onConfirm: { txnId in
+                        viewModel.markStatementPaid(stmt.id, transactionId: txnId)
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showBillsSheet) {
                 if let bvm = billsViewModel {
@@ -398,7 +411,11 @@ struct DashboardView: View {
                             unpaidStatement: viewModel.unpaidStatement(for: account.id),
                             onMarkPaid: {
                                 if let stmt = viewModel.unpaidStatement(for: account.id) {
-                                    viewModel.markStatementPaid(stmt.id)
+                                    // Open the same MarkBillPaidSheet the
+                                    // recurring bills use — one consistent
+                                    // flow + records which transaction
+                                    // settled the statement.
+                                    statementToMarkPaid = stmt
                                 }
                             },
                             onTap: { selectedAccount = account }

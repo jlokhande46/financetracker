@@ -111,8 +111,10 @@ final class BillCycleManager {
                 let diff = abs(txn.amount - stmt.totalDue)
                 return diff <= max(Decimal(1), stmt.totalDue * Decimal(0.01))
             }
-            if match != nil {
-                statementRepo.markPaid(stmt.id)
+            if let match {
+                // Record the auto-matched payment id alongside the paid flag
+                // so the user can trace which transaction settled the bill.
+                statementRepo.markPaid(stmt.id, transactionId: match.id)
                 NotificationManager.shared.cancelReminders(for: stmt.id)
             }
         }

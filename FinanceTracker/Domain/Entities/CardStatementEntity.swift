@@ -12,6 +12,11 @@ struct CardStatementEntity: Identifiable, Equatable {
     var minimumDue: Decimal?
     var isPaid: Bool
     var paidDate: Date?
+    /// When the user marks the statement paid via the picker (or
+    /// BillCycleManager auto-matches), this is the TransactionEntity.id
+    /// of the cc_payment / transfer that settled it. Lets the user trace
+    /// "ICICI Sapphiro paid via HDFC NEFT ₹35,000 on 28th".
+    var paidTransactionId: UUID?
     let importedAt: Date
 
     // Helpers
@@ -39,6 +44,7 @@ struct CardStatementEntity: Identifiable, Equatable {
         minimumDue: Decimal? = nil,
         isPaid: Bool = false,
         paidDate: Date? = nil,
+        paidTransactionId: UUID? = nil,
         importedAt: Date = Date()
     ) {
         self.id = id
@@ -52,6 +58,7 @@ struct CardStatementEntity: Identifiable, Equatable {
         self.minimumDue = minimumDue
         self.isPaid = isPaid
         self.paidDate = paidDate
+        self.paidTransactionId = paidTransactionId
         self.importedAt = importedAt
     }
 }

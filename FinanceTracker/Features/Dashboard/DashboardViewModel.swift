@@ -46,10 +46,33 @@ final class DashboardViewModel {
         self.salaryWatcher     = salaryWatcher
     }
 
-    func markStatementPaid(_ id: UUID) {
-        cardStatementRepo?.markPaid(id)
+    func markStatementPaid(_ id: UUID, transactionId: UUID? = nil) {
+        cardStatementRepo?.markPaid(id, transactionId: transactionId)
         NotificationManager.shared.cancelReminders(for: id)
         upcomingStatements.removeAll { $0.id == id }
+    }
+
+    /// Candidate transactions for the CC Mark-Paid picker — debits classified
+    /// as `cc_payment` or `transfer` from the last 14 days, scored by closeness
+    /// to the statement's totalDue. Reuses the same MarkBillPaidSheet that
+    /// the Recurring Bills section uses, so the user gets a consistent flow.
+    func ccPaymentCandidates(for statement: CardStatementEntity) -> [TransactionEntity] {
+        let cal = Calendar.current
+        let from = cal.date(byAdding: .day, value: -14, to: Date()) ?? Date()
+        // CC payments are credits to the user (the bank credits the card with
+        // their payment) OR debits from the savings side. We accept both
+        // directions because the user's savings-account UPI/NEFT to the CC
+        // shows up as a debit, while the CC's "Payment Received" reads as
+        // a credit on the card statement.
+        let pool = transactionRepo.fetchAll(from: from).filter { txn in
+            txn.categorySlug == "cc_payment" || txn.categorySlug == "transfer"
+        }
+        let totalDouble = NSDecimalNumber(decimal: statement.totalDue).doubleValue
+        return pool.sorted { a, b in
+            let aD = NSDecimalNumber(decimal: a.amount).doubleValue
+            let bD = NSDecimalNumber(decimal: b.amount).doubleValue
+            return abs(aD - totalDouble) < abs(bD - totalDouble)
+        }
     }
 
     func confirmReview(transaction: TransactionEntity, newName: String?, newSlug: String, newTags: [String]? = nil, rememberName: Bool, rememberCategory: Bool, applyToPast: Bool = false) {

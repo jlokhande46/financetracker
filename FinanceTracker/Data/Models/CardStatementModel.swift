@@ -14,6 +14,9 @@ final class CardStatementModel {
     var minimumDueDouble: Double?
     var isPaid: Bool = false
     var paidDate: Date?
+    /// Optional link to the cc_payment / transfer transaction that settled
+    /// this statement. SwiftData auto-migrates existing rows to nil.
+    var paidTransactionId: UUID?
     var importedAt: Date = Date()
 
     init(
@@ -28,6 +31,7 @@ final class CardStatementModel {
         minimumDueDouble: Double? = nil,
         isPaid: Bool = false,
         paidDate: Date? = nil,
+        paidTransactionId: UUID? = nil,
         importedAt: Date = Date()
     ) {
         self.id = id
@@ -41,6 +45,7 @@ final class CardStatementModel {
         self.minimumDueDouble = minimumDueDouble
         self.isPaid = isPaid
         self.paidDate = paidDate
+        self.paidTransactionId = paidTransactionId
         self.importedAt = importedAt
     }
 
@@ -57,6 +62,7 @@ final class CardStatementModel {
             minimumDue: minimumDueDouble.map { Decimal($0) },
             isPaid: isPaid,
             paidDate: paidDate,
+            paidTransactionId: paidTransactionId,
             importedAt: importedAt
         )
     }

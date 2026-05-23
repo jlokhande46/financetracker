@@ -51,10 +51,11 @@ final class CardStatementRepositoryImpl {
         try? modelContext.save()
     }
 
-    func markPaid(_ id: UUID) {
+    func markPaid(_ id: UUID, transactionId: UUID? = nil) {
         guard let model = (try? modelContext.fetch(FetchDescriptor<CardStatementModel>()))?.first(where: { $0.id == id }) else { return }
         model.isPaid = true
         model.paidDate = Date()
+        if let transactionId { model.paidTransactionId = transactionId }
         try? modelContext.save()
     }
 
