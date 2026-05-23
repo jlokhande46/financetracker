@@ -111,7 +111,9 @@ struct RecurringBillEntity: Identifiable, Equatable {
     /// clamping to the month's last day. So a bill with dueDay = 31 falls
     /// on Feb 28/29 in February, June 30 in June, etc.
     private func snapDay(_ day: Int, to date: Date, calendar: Calendar) -> Date {
-        let range = calendar.range(of: .day, in: .month, for: date) ?? 1...28
+        // Calendar.range returns a half-open Range<Int> like 1..<29 / 1..<32 —
+        // upperBound is exclusive, so the last valid day is `upperBound - 1`.
+        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<29
         let clamped = min(day, range.upperBound - 1)
         var comps = calendar.dateComponents([.year, .month], from: date)
         comps.day = clamped
