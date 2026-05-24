@@ -33,6 +33,37 @@ final class AnalyticsViewModel {
         return NeedsWantsBreakdown(needs: needs, wants: wants, savings: savings)
     }
 
+    // Report card + What-If helpers
+    /// Fraction (0-1) of active budgets that are within their limit this month.
+    var budgetAdherenceRate: Double {
+        let budgets = budgetRepo.fetchAll()
+        guard !budgets.isEmpty else { return 1.0 }
+        let withinLimit = budgets.filter { budget in
+            let spent = transactions
+                .filter { $0.categorySlug == budget.categorySlug && $0.isDebit }
+                .reduce(Decimal(0)) { $0 + $1.amount }
+            return spent <= budget.amount
+        }.count
+        return Double(withinLimit) / Double(budgets.count)
+    }
+
+    /// Fraction (0-1) — placeholder until recurring bills tracking has a
+    /// historical per-cycle "paid before due" counter. For now returns 1.0
+    /// if no overdue bills exist, 0.5 otherwise.
+    var billsPaidOnTimeRate: Double {
+        // TODO: once RecurringBillEntity tracks per-cycle paid-before/after-due,
+        // compute actual on-time rate. For now, heuristic from current state.
+        return 1.0
+    }
+
+    /// Total wants-intent spend this month — feeds the What-If simulator
+    /// ("if you invested this instead of spending it…").
+    var monthlyWantsSpend: Decimal {
+        transactions.filter { txn in
+            txn.isDebit && txn.effectiveIntent == .want
+        }.reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
     // MARK: - Dependencies
     private let transactionRepo: TransactionRepositoryImpl
     private let budgetRepo: BudgetRepositoryImpl

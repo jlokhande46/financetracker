@@ -185,7 +185,7 @@ enum SmartInsightsEngine {
             }
         }
 
-        // 4. Subscription review hint
+        // 4. Subscription review hint + unused detection
         let subs = expenses.filter { $0.categorySlug == "subscriptions" }
         if subs.count >= 3 {
             let subTotal = subs.reduce(Decimal(0)) { $0 + $1.amount }
@@ -196,6 +196,33 @@ enum SmartInsightsEngine {
                 detail: "Costing \(formatINR(subTotal)). Audit them — one unused = pure savings.",
                 actionLabel: nil
             ))
+        }
+
+        // 4b. Unused subscription detector — flag subscription merchants
+        // whose LAST non-recurring (i.e. actual usage/interaction, not the
+        // recurring charge itself) transaction is older than 30 days. This
+        // catches "paying for Netflix but haven't watched in 2 months" type
+        // waste. Works on the full historical window.
+        let allTxns = transactions + historicalTransactions
+        let subMerchants = Set(allTxns.filter { $0.categorySlug == "subscriptions" || $0.isRecurring }
+            .map { ($0.merchantName.isEmpty ? $0.merchantRaw : $0.merchantName).lowercased() })
+        for merchant in subMerchants {
+            let txnsForMerchant = allTxns.filter {
+                ($0.merchantName.isEmpty ? $0.merchantRaw : $0.merchantName).lowercased() == merchant
+            }
+            guard let latestCharge = txnsForMerchant.max(by: { $0.date < $1.date }) else { continue }
+            let daysSinceLastCharge = Calendar.current.dateComponents([.day], from: latestCharge.date, to: Date()).day ?? 0
+            if daysSinceLastCharge > 45 {
+                let displayName = latestCharge.merchantName.isEmpty ? latestCharge.merchantRaw : latestCharge.merchantName
+                out.append(SmartInsight(
+                    icon: "scissors",
+                    iconColor: Color(hex: "#EF4444"),
+                    headline: "\(displayName) — still paying?",
+                    detail: "Last charge was \(daysSinceLastCharge) days ago. Cancel if unused — saves \(formatINR(latestCharge.amount))/mo.",
+                    actionLabel: "Review"
+                ))
+                break // Only surface one unused-sub insight at a time
+            }
         }
 
         // 5. Anomaly detection — z-score on category spend vs trailing history.

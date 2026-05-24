@@ -58,6 +58,20 @@ struct AnalyticsView: View {
                                 subscriptionWasteSection(analysis)
                                     .padding(.horizontal, Spacing.base)
                             }
+
+                            // Monthly Report Card
+                            MonthlyReportCard(
+                                analysis: analysis,
+                                budgetAdherence: viewModel.budgetAdherenceRate,
+                                billsPaidOnTime: viewModel.billsPaidOnTimeRate
+                            )
+                            .padding(.horizontal, Spacing.base)
+
+                            // What-If Investment Simulator
+                            WhatIfSimulatorCard(
+                                monthlyWantsSpend: viewModel.monthlyWantsSpend
+                            )
+                            .padding(.horizontal, Spacing.base)
                         } else {
                             emptyState
                         }
