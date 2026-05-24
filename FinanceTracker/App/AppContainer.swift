@@ -11,6 +11,7 @@ class AppContainer {
     let cardStatementRepo: CardStatementRepositoryImpl
     let goalRepo: GoalRepositoryImpl
     let recurringBillRepo: RecurringBillRepositoryImpl
+    let investmentRepo: InvestmentHoldingRepositoryImpl
     let billCycleManager: BillCycleManager
     let salaryWatcher: SalaryWatcher
 
@@ -21,6 +22,7 @@ class AppContainer {
         self.cardStatementRepo   = CardStatementRepositoryImpl(modelContext: modelContext)
         self.goalRepo            = GoalRepositoryImpl(modelContext: modelContext)
         self.recurringBillRepo   = RecurringBillRepositoryImpl(modelContext: modelContext)
+        self.investmentRepo      = InvestmentHoldingRepositoryImpl(modelContext: modelContext)
         self.billCycleManager    = BillCycleManager(
             accountRepo: accountRepo,
             statementRepo: cardStatementRepo,
@@ -207,6 +209,7 @@ class AppContainer {
         cardStatementRepo.deleteAll()
         goalRepo.deleteAll()
         recurringBillRepo.deleteAll()
+        investmentRepo.deleteAll()
         MerchantRuleStore.shared.deleteAll()
         NotificationManager.shared.cancelAll()
         SalaryWatcher.resetSalaryAnnouncementDedup()

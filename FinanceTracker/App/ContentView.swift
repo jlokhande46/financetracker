@@ -56,7 +56,8 @@ struct ContentView: View {
                                          goalRepo: c.goalRepo,
                                          recurringBillRepo: c.recurringBillRepo,
                                          salaryWatcher: c.salaryWatcher)
-            let avm = AnalyticsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
+            let nwTracker = NetWorthTracker(accountRepo: c.accountRepo, investmentRepo: c.investmentRepo)
+            let avm = AnalyticsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo, netWorthTracker: nwTracker)
             let bvm = BudgetsViewModel(transactionRepo: c.transactionRepo, budgetRepo: c.budgetRepo)
 
             dashboardVM = dvm

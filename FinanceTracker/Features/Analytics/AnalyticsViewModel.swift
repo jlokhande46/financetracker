@@ -13,6 +13,10 @@ final class AnalyticsViewModel {
     var last6MonthsData: [MonthlyAnalysis] = []
     var isLoading: Bool = false
 
+    // Net Worth
+    var netWorthSnapshot: NetWorthTracker.Snapshot?
+    var netWorthHistory: [NetWorthTracker.MonthPoint] = []
+
     // 50/30/20 breakdown for the selected month
     var needsWantsBreakdown: NeedsWantsBreakdown {
         var needs: Decimal = 0
@@ -32,10 +36,14 @@ final class AnalyticsViewModel {
     // MARK: - Dependencies
     private let transactionRepo: TransactionRepositoryImpl
     private let budgetRepo: BudgetRepositoryImpl
+    private let netWorthTracker: NetWorthTracker?
 
-    init(transactionRepo: TransactionRepositoryImpl, budgetRepo: BudgetRepositoryImpl) {
+    init(transactionRepo: TransactionRepositoryImpl,
+         budgetRepo: BudgetRepositoryImpl,
+         netWorthTracker: NetWorthTracker? = nil) {
         self.transactionRepo = transactionRepo
         self.budgetRepo = budgetRepo
+        self.netWorthTracker = netWorthTracker
     }
 
     // MARK: - Load
@@ -54,6 +62,9 @@ final class AnalyticsViewModel {
 
         analysis = computeAnalysisForMonth(selectedMonth, txns: monthTxns, allTxns: rollingWindow)
         last6MonthsData = computeLast6Months(rollingWindow)
+
+        netWorthSnapshot = netWorthTracker?.compute()
+        netWorthHistory = netWorthTracker?.monthlyHistory() ?? []
     }
 
     func selectMonth(_ date: Date) {

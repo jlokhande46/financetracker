@@ -39,7 +39,8 @@ struct FinanceTrackerApp: App {
             MerchantRuleModel.self,
             CardStatementModel.self,
             GoalModel.self,
-            RecurringBillModel.self
+            RecurringBillModel.self,
+            InvestmentHoldingModel.self
         ])
 
         // Local-only persistence.

@@ -5,6 +5,7 @@ struct AnalyticsView: View {
 
     @State var viewModel: AnalyticsViewModel
     @State private var appearAnimation = false
+    @State private var showManageInvestments = false
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,16 @@ struct AnalyticsView: View {
                         if viewModel.isLoading {
                             loadingPlaceholder
                         } else if let analysis = viewModel.analysis {
+                            // Net Worth — always at the top
+                            if let nw = viewModel.netWorthSnapshot {
+                                NetWorthCard(
+                                    snapshot: nw,
+                                    history: viewModel.netWorthHistory,
+                                    onManageInvestments: { showManageInvestments = true }
+                                )
+                                .padding(.horizontal, Spacing.base)
+                            }
+
                             summaryNumbers(analysis)
                                 .padding(.horizontal, Spacing.base)
 
@@ -59,6 +70,12 @@ struct AnalyticsView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .task { await viewModel.load() }
+            .sheet(isPresented: $showManageInvestments) {
+                ManageInvestmentsSheet()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .onDisappear { Task { await viewModel.load() } }
+            }
             .onAppear {
                 withAnimation(.easeOut(duration: 0.4)) {
                     appearAnimation = true
