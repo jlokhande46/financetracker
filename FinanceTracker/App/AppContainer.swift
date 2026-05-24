@@ -50,6 +50,9 @@ class AppContainer {
         // Check whether a recent salary should kick off bill reminders for any
         // cycle still unpaid.
         salaryWatcher.handleStateChange()
+        // (Re)schedule the daily rotating finance tip — one pending repeating
+        // notification that fires every day at 9:30 AM.
+        NotificationManager.shared.scheduleFinanceTip()
     }
 
     /// Drains any SMS texts queued by `LogBankSMSIntent` (the App Intent that

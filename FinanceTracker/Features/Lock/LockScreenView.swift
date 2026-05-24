@@ -16,14 +16,31 @@ struct LockScreenView: View {
             VStack(spacing: Spacing.xl) {
                 Spacer()
 
-                // App lock icon
+                // App mark — mirrors onboarding logo
                 ZStack {
-                    Circle()
-                        .fill(Color.brandPrimary.opacity(0.15))
-                        .frame(width: 120, height: 120)
-                    Image(systemName: biometric.icon)
-                        .font(.system(size: 56, weight: .light))
-                        .foregroundStyle(Color.brandPrimary)
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.brandPrimary, .brandAccent, Color(hex: "#4338CA")],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 100, height: 100)
+                        .shadow(color: .brandPrimary.opacity(0.4), radius: 16, x: 0, y: 8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                    Text("₹")
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .foregroundStyle(
+                            .linearGradient(
+                                colors: [.white, .white.opacity(0.85)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 }
 
                 VStack(spacing: Spacing.sm) {

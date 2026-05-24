@@ -88,6 +88,10 @@ final class BillCycleManager {
         let daysSinceCycle = Calendar.current.dateComponents([.day], from: cycleEnd, to: now).day ?? 0
         if daysSinceCycle <= 1 {
             NotificationManager.shared.fireBillGeneratedAlert(for: statement)
+            // Nudge user to import the PDF so the app has full txn details
+            // for this billing cycle (amount verification + merchant names
+            // that SMS didn't capture).
+            NotificationManager.shared.firePDFImportReminder(for: statement)
         }
     }
 

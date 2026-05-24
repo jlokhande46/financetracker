@@ -355,6 +355,66 @@ final class NotificationManager: NSObject {
         "bill_\(billId.uuidString)_d\(offset)_\(slot)"
     }
 
+    // MARK: - PDF import reminder
+
+    /// Nudge to import the CC statement PDF for a freshly-generated cycle.
+    /// Fires 6 hours after the bill-generated alert so the two don't stack
+    /// on the lock screen simultaneously.
+    func firePDFImportReminder(for statement: CardStatementEntity) {
+        let content = UNMutableNotificationContent()
+        content.title = "Import your statement"
+        content.body = "\(statement.accountName) statement is ready. Import the PDF to verify amounts and catch merchants SMS missed."
+        content.sound = .default
+        content.threadIdentifier = "card-due-\(statement.id.uuidString)"
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 6 * 3600, repeats: false)
+        let id = "pdf_import_\(statement.id.uuidString)"
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+        )
+    }
+
+    // MARK: - Finance fun-facts / tips
+
+    private static let financeTips: [String] = [
+        "The 50/30/20 rule: 50% needs, 30% wants, 20% savings. Even ₹500/day in savings grows to ₹1.8L/year.",
+        "SIP compounding: ₹5,000/mo at 12% p.a. for 10 years becomes ~₹11.6L (₹6L invested + ₹5.6L returns).",
+        "Emergency fund rule of thumb: keep 6 months of expenses in liquid savings before investing aggressively.",
+        "Credit card tip: always pay the full amount, not just minimum due. The 40%+ APR on revolving balance is the most expensive loan you can take.",
+        "The latte factor: ₹200/day on small luxuries = ₹72K/year. You don't have to cut it all — just know the number.",
+        "Employer PF match is free money. If your company matches up to 12%, max it out before any other investing.",
+        "Tax-saving tip: ₹1.5L under 80C (ELSS/PPF/NPS) saves ~₹46K in tax at the 30% slab.",
+        "Rule of 72: divide 72 by annual return % to estimate years to double. At 12%, money doubles in ~6 years.",
+        "Lifestyle inflation is silent: a 20% raise often leads to 20% more spending. Fix your savings rate FIRST, then spend the rest.",
+        "EMI rule: total EMIs should not exceed 35-40% of take-home pay. Beyond that, one bad month can snowball.",
+        "Health insurance: don't rely only on employer cover. A personal ₹5-10L policy at age 25-30 costs ₹6-10K/year — much cheaper than later.",
+        "CAGR vs absolute: ₹1L → ₹2L in 5 years is 14.9% CAGR, not 20% — always think compounded.",
+        "Recurring deposit hack: schedule on salary day so the money moves before you spend it.",
+        "Audit subscriptions quarterly. Most people have 2-3 unused ones that cost ₹1-3K/year combined.",
+        "Cashback ≠ discount. Spending ₹10,000 for 5% cashback still costs you ₹9,500 — only use cashback on purchases you'd make anyway.",
+    ]
+
+    /// Schedules a daily (9:30 AM) rotating finance tip. Each call replaces
+    /// the old schedule so there's only ever 1 pending tip notification.
+    /// Call from the daily sweep.
+    func scheduleFinanceTip() {
+        guard UserDefaults.standard.object(forKey: "financeTipsEnabled") as? Bool ?? true else { return }
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["finance_tip_daily"])
+
+        let tip = Self.financeTips.randomElement() ?? Self.financeTips[0]
+        let content = UNMutableNotificationContent()
+        content.title = "Finance Tip"
+        content.body = tip
+        content.sound = .default
+        content.threadIdentifier = "finance-tips"
+
+        var components = DateComponents()
+        components.hour = 9
+        components.minute = 30
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        center.add(UNNotificationRequest(identifier: "finance_tip_daily", content: content, trigger: trigger))
+    }
+
     // MARK: - Budget alerts
 
     /// Checks every active budget and fires a notification when it crosses 80 % or 100 %.

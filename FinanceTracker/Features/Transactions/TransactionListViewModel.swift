@@ -62,10 +62,14 @@ final class TransactionListViewModel {
     }
 
     /// Every tag ever used across transactions (sorted) — feeds the filter sheet.
-    var allKnownTags: [String] {
+    /// Cached per load cycle to avoid O(n) recalculation on every SwiftUI body
+    /// evaluation (which @Observable triggers frequently during scroll).
+    private(set) var allKnownTags: [String] = []
+
+    private func rebuildKnownTags() {
         var set = Set<String>()
         for t in allTransactions { for tag in t.tags { set.insert(tag) } }
-        return Array(set).sorted()
+        allKnownTags = Array(set).sorted()
     }
 
     // MARK: - Dependencies
@@ -111,15 +115,21 @@ final class TransactionListViewModel {
         }
 
         pendingReviewTransactions = transactionRepo.fetchPendingReview()
+        rebuildKnownTags()
         applyFilters()
     }
 
     /// Loads the next older page when the feed scrolls near the bottom.
     /// No-op when pagination is exhausted, a fetch is already in flight, or
     /// the view is in filter/search mode (which holds the full result set).
+    /// Tiny debounce (100ms) avoids the scenario where multiple rows near
+    /// the bottom all fire onAppear within the same scroll frame and pile
+    /// up redundant fetches / re-renders.
     func loadMoreIfNeeded() async {
         guard hasMorePages, !isLoadingMore else { return }
         guard !hasActiveFilters && searchText.isEmpty else { return }
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        guard hasMorePages, !isLoadingMore else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
 
@@ -127,6 +137,7 @@ final class TransactionListViewModel {
         allTransactions.append(contentsOf: page.transactions)
         oldestLoadedDate = page.oldestDate ?? oldestLoadedDate
         hasMorePages = page.hasMore
+        rebuildKnownTags()
         applyFilters()
     }
 

@@ -137,22 +137,33 @@ private struct WelcomePage: View {
                         )
                 }
 
-                // Main circle
-                Circle()
+                // Main rounded-square — the new app icon proxy
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [.brandPrimary, .brandAccent],
+                            colors: [.brandPrimary, .brandAccent, Color(hex: "#4338CA")],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .frame(width: 120, height: 120)
                     .shadow(color: .brandPrimary.opacity(0.5), radius: 20, x: 0, y: 10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.15), lineWidth: 1.5)
+                    )
 
-                // Rupee symbol
+                // Stylised ₹ with a subtle offset shadow for depth
                 Text("₹")
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .foregroundStyle(
+                        .linearGradient(
+                            colors: [.white, .white.opacity(0.85)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(color: .black.opacity(0.15), radius: 2, x: 0, y: 2)
             }
             .scaleEffect(logoScale)
             .opacity(logoOpacity)
