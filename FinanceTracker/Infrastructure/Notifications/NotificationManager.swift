@@ -171,10 +171,11 @@ final class NotificationManager: NSObject {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let safeMerchant = displayMerchant.isEmpty ? "Unknown" : displayMerchant
             let sign = parsed.type == .credit ? "+" : "-"
-            content.title = "Logged from SMS"
-            content.body = "\(sign)₹\(formattedAmount(parsed.amount)) \(safeMerchant)"
+            content.title    = safeMerchant
+            content.subtitle = "\(sign)₹\(formattedAmount(parsed.amount))"
+            content.body     = parsed.type == .credit ? "Credited" : "Debited"
         } else {
-            content.title = "SMS received — couldn't parse"
+            content.title = "Couldn't read SMS"
             content.body = "Open FinanceTracker to log this transaction manually."
             content.interruptionLevel = .timeSensitive
         }
@@ -203,8 +204,9 @@ final class NotificationManager: NSObject {
         let content = UNMutableNotificationContent()
         content.sound = .default
         content.threadIdentifier = "sms-received"
-        content.title = "Transaction needs review"
-        content.body = "\(sign)₹\(formattedAmount(transaction.amount)) \(displayMerchant) — tap to confirm category"
+        content.title    = displayMerchant
+        content.subtitle = "\(sign)₹\(formattedAmount(transaction.amount))"
+        content.body     = "Category unclear — tap to confirm"
 
         // 3s delay so it lands after the arrival alert and not as a stack.
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false)
