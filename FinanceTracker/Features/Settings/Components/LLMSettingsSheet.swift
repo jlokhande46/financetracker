@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Configures the LLM parser beta — enable toggle, API key entry, model
-/// picker, and privacy warning. Reachable from Settings → Privacy &
-/// Security → "AI Parsing (Beta)".
+/// Configures the LLM parser beta — provider picker, API key entry,
+/// model selector, and privacy warning. Reachable from Settings →
+/// "AI Parsing (Beta)".
 struct LLMSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(LLMSettings.enabledKey) private var enabled: Bool = false
-    @AppStorage(LLMSettings.modelKey) private var model: String = "claude-haiku-4-5-20251001"
+    @AppStorage(LLMSettings.providerKey) private var providerRaw: String = LLMSettings.Provider.nemotron.rawValue
+    @AppStorage(LLMSettings.modelKey) private var model: String = ""
 
     @State private var apiKeyDraft: String = ""
     @State private var hasStoredKey: Bool = false
@@ -14,10 +15,9 @@ struct LLMSettingsSheet: View {
     @State private var testResult: String? = nil
     @State private var isTesting: Bool = false
 
-    private let availableModels: [(id: String, label: String, subtitle: String)] = [
-        ("claude-haiku-4-5-20251001", "Haiku 4.5", "Fast + cheap (recommended)"),
-        ("claude-sonnet-5", "Sonnet 5", "Smarter for tricky formats"),
-    ]
+    private var provider: LLMSettings.Provider {
+        LLMSettings.Provider(rawValue: providerRaw) ?? .nemotron
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,6 +29,7 @@ struct LLMSettingsSheet: View {
                         privacyCallout
                         enableToggle
                         if enabled {
+                            providerPicker
                             apiKeySection
                             modelSection
                             if let result = testResult { testResultView(result) }
@@ -49,8 +50,17 @@ struct LLMSettingsSheet: View {
                         .foregroundStyle(Color.brandPrimary)
                 }
             }
-            .onAppear {
-                hasStoredKey = LLMKeychain.apiKey() != nil
+            .onAppear { refreshStoredKeyStatus() }
+            .onChange(of: providerRaw) { _, _ in
+                // Provider switched — snap model to new provider's default
+                // if the stored model isn't in the new provider's menu.
+                let currentProvider = provider
+                if !currentProvider.availableModels.contains(where: { $0.id == model }) {
+                    model = currentProvider.defaultModel
+                }
+                apiKeyDraft = ""
+                testResult = nil
+                refreshStoredKeyStatus()
             }
         }
     }
@@ -92,7 +102,7 @@ struct LLMSettingsSheet: View {
                     .font(.titleMedium)
                     .foregroundStyle(Color.textPrimary)
             }
-            Text("With this on, every unrecognised SMS or PDF gets sent to the LLM provider (Anthropic) over the network for parsing. Built-in parsers still run first and always stay offline. Turn this off any time to go back to fully-local parsing.")
+            Text("With this on, every unrecognised SMS or PDF gets sent to the selected LLM provider (NVIDIA or Anthropic) over the network for parsing. Built-in parsers still run first and always stay offline. Turn this off any time to go back to fully-local parsing.")
                 .font(.caption)
                 .foregroundStyle(Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -126,14 +136,41 @@ struct LLMSettingsSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
+    private var providerPicker: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text("PROVIDER")
+                .font(.micro)
+                .foregroundStyle(Color.textSecondary)
+            HStack(spacing: 0) {
+                ForEach(LLMSettings.Provider.allCases) { p in
+                    Button {
+                        withAnimation(.springy) { providerRaw = p.rawValue }
+                    } label: {
+                        Text(p.displayName)
+                            .font(.bodyMedium)
+                            .foregroundStyle(providerRaw == p.rawValue ? .white : Color.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.sm)
+                            .background(providerRaw == p.rawValue ? Color.brandPrimary : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(4)
+            .background(Color.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+    }
+
     private var apiKeySection: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
-                Text("ANTHROPIC API KEY")
+                Text(provider.keyLabel.uppercased())
                     .font(.micro)
                     .foregroundStyle(Color.textSecondary)
                 Spacer()
-                if hasStoredKey, let preview = LLMKeychain.redactedPreview() {
+                if hasStoredKey, let preview = LLMKeychain.redactedPreview(provider: provider) {
                     Text(preview)
                         .font(.micro)
                         .foregroundStyle(Color.incomeGreen)
@@ -144,9 +181,9 @@ struct LLMSettingsSheet: View {
             HStack(spacing: Spacing.sm) {
                 Group {
                     if showKey {
-                        TextField("sk-ant-…", text: $apiKeyDraft)
+                        TextField(provider.keyPlaceholder, text: $apiKeyDraft)
                     } else {
-                        SecureField("sk-ant-…", text: $apiKeyDraft)
+                        SecureField(provider.keyPlaceholder, text: $apiKeyDraft)
                     }
                 }
                 .font(.bodyMedium)
@@ -167,11 +204,11 @@ struct LLMSettingsSheet: View {
 
             HStack(spacing: Spacing.sm) {
                 Button {
-                    _ = LLMKeychain.setAPIKey(apiKeyDraft)
-                    hasStoredKey = LLMKeychain.apiKey() != nil
+                    _ = LLMKeychain.setAPIKey(apiKeyDraft, provider: provider)
+                    refreshStoredKeyStatus()
                     apiKeyDraft = ""
                     showKey = false
-                    testResult = hasStoredKey ? "Key saved to Keychain." : "Save failed."
+                    testResult = hasStoredKey ? "Key saved to Keychain for \(provider.displayName)." : "Save failed."
                 } label: {
                     Text("Save Key")
                         .font(.caption)
@@ -186,9 +223,9 @@ struct LLMSettingsSheet: View {
 
                 if hasStoredKey {
                     Button(role: .destructive) {
-                        _ = LLMKeychain.clear()
-                        hasStoredKey = false
-                        testResult = "Key removed from Keychain."
+                        _ = LLMKeychain.clear(provider: provider)
+                        refreshStoredKeyStatus()
+                        testResult = "\(provider.displayName) key removed from Keychain."
                     } label: {
                         Text("Clear")
                             .font(.caption)
@@ -201,7 +238,10 @@ struct LLMSettingsSheet: View {
                     .buttonStyle(.plain)
                 }
             }
-            Text("Stored in iOS Keychain — encrypted at rest, never in iCloud backup.")
+            Text(provider.keyHelpLine)
+                .font(.micro)
+                .foregroundStyle(Color.textTertiary)
+            Text("Stored in iOS Keychain — encrypted at rest, never in iCloud backup. Each provider's key is stored separately.")
                 .font(.micro)
                 .foregroundStyle(Color.textTertiary)
         }
@@ -213,7 +253,8 @@ struct LLMSettingsSheet: View {
                 .font(.micro)
                 .foregroundStyle(Color.textSecondary)
             VStack(spacing: 0) {
-                ForEach(availableModels, id: \.id) { m in
+                let models = provider.availableModels
+                ForEach(models, id: \.id) { m in
                     Button {
                         withAnimation(.springy) { model = m.id }
                     } label: {
@@ -234,7 +275,7 @@ struct LLMSettingsSheet: View {
                         .padding(Spacing.base)
                     }
                     .buttonStyle(.plain)
-                    if m.id != availableModels.last?.id {
+                    if m.id != models.last?.id {
                         Divider()
                             .background(Color.textTertiary.opacity(0.15))
                             .padding(.leading, 56)
@@ -285,7 +326,7 @@ struct LLMSettingsSheet: View {
             Text("HOW IT WORKS")
                 .font(.micro)
                 .foregroundStyle(Color.textSecondary)
-            Text("The built-in parser always runs first — it covers the top Indian bank formats offline. When a message doesn't match any known format, the raw text is sent to the LLM for a best-effort extraction. LLM results appear in the feed with the same review workflow.")
+            Text("The built-in parser always runs first — it covers the top Indian bank formats offline. When a message doesn't match any known format, the raw text is sent to the selected provider for a best-effort extraction. LLM results appear in the feed with the same review workflow.")
                 .font(.caption)
                 .foregroundStyle(Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -293,6 +334,10 @@ struct LLMSettingsSheet: View {
                 .background(Color.bgCard)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         }
+    }
+
+    private func refreshStoredKeyStatus() {
+        hasStoredKey = LLMKeychain.apiKey(provider: provider) != nil
     }
 
     private func runTestParse() {
@@ -304,9 +349,9 @@ struct LLMSettingsSheet: View {
             await MainActor.run {
                 isTesting = false
                 if let r = result {
-                    testResult = "✓ Parsed: \(r.type.rawValue.capitalized) ₹\(r.amount) at \(r.merchantRaw)"
+                    testResult = "✓ Parsed via \(provider.displayName): \(r.type.rawValue.capitalized) ₹\(r.amount) at \(r.merchantRaw)"
                 } else {
-                    testResult = "✗ No result — check API key, network, or model availability."
+                    testResult = "✗ No result — check the \(provider.keyLabel), network, or model availability."
                 }
             }
         }

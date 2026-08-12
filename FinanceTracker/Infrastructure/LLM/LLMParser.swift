@@ -18,19 +18,16 @@ final class LLMParser {
     private init() {}
 
     /// Parses a single SMS. Returns nil when:
-    ///   - Beta is disabled or no API key
+    ///   - Beta is disabled or no API key for the current provider
     ///   - Network / API failure
     ///   - LLM decides the text isn't a bank transaction
     func parseSMS(_ text: String) async -> ParsedSMSResult? {
-        guard LLMSettings.isReady, let key = LLMKeychain.apiKey() else { return nil }
-
-        let system = Self.smsSystemPrompt
-        let userMessage = text
+        guard LLMSettings.isReady, let key = LLMKeychain.currentAPIKey() else { return nil }
 
         do {
-            let json = try await callAnthropic(
-                system: system,
-                user: userMessage,
+            let json = try await callProvider(
+                system: Self.smsSystemPrompt,
+                user: text,
                 apiKey: key,
                 model: LLMSettings.model,
                 maxTokens: 400
@@ -47,16 +44,15 @@ final class LLMParser {
     /// non-transaction rows. Called AFTER `PDFStatementParser.parse`
     /// so this is only invoked when the native pipeline finds nothing.
     func parsePDFText(_ text: String) async -> [ParsedSMSResult] {
-        guard LLMSettings.isReady, let key = LLMKeychain.apiKey() else { return [] }
+        guard LLMSettings.isReady, let key = LLMKeychain.currentAPIKey() else { return [] }
 
         // Trim to a reasonable prompt size — most CC statements fit in
         // 20-30k chars. Chunking beyond one call would be phase-2.
         let clipped = String(text.prefix(30_000))
-        let system = Self.pdfSystemPrompt
 
         do {
-            let json = try await callAnthropic(
-                system: system,
+            let json = try await callProvider(
+                system: Self.pdfSystemPrompt,
                 user: clipped,
                 apiKey: key,
                 model: LLMSettings.model,
@@ -68,6 +64,32 @@ final class LLMParser {
         } catch {
             LLMAuditLog.record(.pdfFailure(error: error.localizedDescription), text: "PDF text (\(clipped.count) chars)")
             return []
+        }
+    }
+
+    // MARK: - Provider routing
+
+    /// Dispatches to the right HTTP client based on the user's selection.
+    /// Both providers return the raw assistant message content as a string;
+    /// the JSON extraction downstream is identical.
+    private func callProvider(
+        system: String,
+        user: String,
+        apiKey: String,
+        model: String,
+        maxTokens: Int
+    ) async throws -> String {
+        switch LLMSettings.provider {
+        case .anthropic:
+            return try await callAnthropic(
+                system: system, user: user, apiKey: apiKey,
+                model: model, maxTokens: maxTokens
+            )
+        case .nemotron:
+            return try await callNemotron(
+                system: system, user: user, apiKey: apiKey,
+                model: model, maxTokens: maxTokens
+            )
         }
     }
 
@@ -203,6 +225,74 @@ final class LLMParser {
         let decoded = try JSONDecoder().decode(AnthropicMessagesResponse.self, from: data)
         guard let text = decoded.content.first(where: { $0.type == "text" })?.text,
               !text.isEmpty else {
+            throw LLMError.emptyContent
+        }
+        return text
+    }
+
+    // MARK: - Nemotron (NVIDIA integrate.api.nvidia.com — OpenAI-compatible)
+
+    private struct NemotronChatRequest: Encodable {
+        let model: String
+        let messages: [Message]
+        let max_tokens: Int
+        let temperature: Double
+        let stream: Bool
+        struct Message: Encodable {
+            let role: String
+            let content: String
+        }
+    }
+
+    private struct NemotronChatResponse: Decodable {
+        let choices: [Choice]
+        struct Choice: Decodable {
+            let message: Message
+        }
+        struct Message: Decodable {
+            let content: String
+        }
+    }
+
+    private func callNemotron(
+        system: String,
+        user: String,
+        apiKey: String,
+        model: String,
+        maxTokens: Int
+    ) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://integrate.api.nvidia.com/v1/chat/completions")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 30
+
+        let body = NemotronChatRequest(
+            model: model,
+            messages: [
+                .init(role: "system", content: system),
+                .init(role: "user",   content: user),
+            ],
+            max_tokens: maxTokens,
+            // Low temperature — extraction task, we want deterministic JSON,
+            // not creative variation.
+            temperature: 0.2,
+            stream: false
+        )
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw LLMError.badResponse(status: -1, body: "No HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "<binary>"
+            throw LLMError.badResponse(status: http.statusCode, body: errorBody)
+        }
+
+        let decoded = try JSONDecoder().decode(NemotronChatResponse.self, from: data)
+        guard let text = decoded.choices.first?.message.content, !text.isEmpty else {
             throw LLMError.emptyContent
         }
         return text
