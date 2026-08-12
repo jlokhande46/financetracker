@@ -18,6 +18,10 @@ struct PDFParseResult {
     var totalDue: Decimal?
     var minimumDue: Decimal?
     var accountLast4: String?
+    /// Full PDFKit-extracted text — retained so the LLM beta fallback can
+    /// re-run when the native pipeline returns zero rows. Kept optional so
+    /// callers that don't need it (existing flows) aren't forced to touch it.
+    var rawText: String?
 }
 
 final class PDFStatementParser {
@@ -85,7 +89,8 @@ final class PDFStatementParser {
             statementDate: extractStatementDate(in: fullText),
             totalDue: extractLabelledAmount(label: #"(?:total\s+amount\s+due|total\s+due|amount\s+due)"#, in: fullText),
             minimumDue: extractLabelledAmount(label: #"(?:minimum\s+amount\s+due|minimum\s+due|min(?:imum)?\s+due)"#, in: fullText),
-            accountLast4: extractAccountLast4(in: fullText, bank: bank)
+            accountLast4: extractAccountLast4(in: fullText, bank: bank),
+            rawText: fullText
         )
     }
 

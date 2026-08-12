@@ -71,7 +71,7 @@ class AppContainer {
     /// processed in one batch (e.g. user opens the app after lunch and
     /// 3 queued bank texts drain — they line up in arrival order instead
     /// of all sharing the moment-of-app-open timestamp).
-    func processPendingSMS() {
+    func processPendingSMS() async {
         let items = PendingSMSStore.drainItems()
         guard !items.isEmpty else { return }
 
@@ -95,9 +95,22 @@ class AppContainer {
                 continue
             }
 
-            guard let result = SMSParser.shared.parse(trimmed) else {
+            // Native parser first (offline, fast, deterministic). Only fall
+            // back to the LLM beta if enabled AND a key is present — the
+            // fallback pays a network round-trip so we never hit it for
+            // SMS the built-in parser handles.
+            var result = SMSParser.shared.parse(trimmed)
+            if result == nil && LLMSettings.isReady {
+                result = await LLMParser.shared.parseSMS(trimmed)
+                if result != nil {
+                    LLMAuditLog.record(.smsSuccess(hasResult: true), text: trimmed)
+                }
+            }
+            guard let result else {
                 SMSAuditStore.record(.parseFailed, text: trimmed, at: now,
-                                     detail: "Main-app parse retry also returned nil.")
+                                     detail: LLMSettings.isReady
+                                         ? "Both native and LLM parsers returned nil."
+                                         : "Main-app parse retry also returned nil.")
                 continue
             }
 
