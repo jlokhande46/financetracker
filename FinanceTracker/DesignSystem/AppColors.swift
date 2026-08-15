@@ -52,12 +52,48 @@ extension Color {
     static let catTransfers     = Color(hex: "#64748B")
     static let catOthers        = Color(hex: "#94A3B8")
 
+    // Hex parsing runs on the hottest path in the app — every category icon,
+    // intent chip, source badge and card accent resolves a hex string, several
+    // times per row, on every SwiftUI body evaluation. Two things made that
+    // expensive enough to drop frames while scrolling the transactions feed:
+    //
+    //   1. `CharacterSet.alphanumerics.inverted` allocated and inverted a full
+    //      Unicode bitmap on EVERY call.
+    //   2. `Scanner` is an object allocation per call.
+    //
+    // Both are now avoided: the character set is hoisted to a static, and
+    // fully-parsed colors are memoised by hex string. Palettes are a small
+    // fixed set (~40 distinct hexes), so the cache stays tiny and never needs
+    // eviction.
+    private static let nonAlphanumerics = CharacterSet.alphanumerics.inverted
+    private static var hexColorCache: [String: Color] = [:]
+    private static let hexColorCacheLock = NSLock()
+
     init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        Self.hexColorCacheLock.lock()
+        let cached = Self.hexColorCache[hex]
+        Self.hexColorCacheLock.unlock()
+        if let cached {
+            self = cached
+            return
+        }
+
+        let cleaned = hex.trimmingCharacters(in: Self.nonAlphanumerics)
+        // Manual nibble parse — avoids allocating a Scanner per call.
         var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
+        for scalar in cleaned.unicodeScalars {
+            let digit: UInt64
+            switch scalar {
+            case "0"..."9": digit = UInt64(scalar.value - 48)
+            case "a"..."f": digit = UInt64(scalar.value - 87)
+            case "A"..."F": digit = UInt64(scalar.value - 55)
+            default: continue
+            }
+            int = (int << 4) | digit
+        }
+
         let a, r, g, b: UInt64
-        switch hex.count {
+        switch cleaned.count {
         case 3:
             (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
         case 6:
@@ -67,6 +103,16 @@ extension Color {
         default:
             (a, r, g, b) = (255, 0, 0, 0)
         }
-        self.init(.sRGB, red: Double(r)/255, green: Double(g)/255, blue: Double(b)/255, opacity: Double(a)/255)
+        let color = Color(.sRGB,
+                          red: Double(r)/255,
+                          green: Double(g)/255,
+                          blue: Double(b)/255,
+                          opacity: Double(a)/255)
+
+        Self.hexColorCacheLock.lock()
+        Self.hexColorCache[hex] = color
+        Self.hexColorCacheLock.unlock()
+
+        self = color
     }
 }

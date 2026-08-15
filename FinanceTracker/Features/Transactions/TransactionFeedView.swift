@@ -208,7 +208,7 @@ struct TransactionFeedView: View {
                     )
                     .padding(.top, Spacing.xxl)
                 } else {
-                    ForEach(viewModel.groupedTransactions, id: \.key) { group in
+                    ForEach(viewModel.groupedTransactions) { group in
                         transactionSection(group: group)
                     }
                     if viewModel.isLoadingMore {
@@ -378,7 +378,7 @@ struct TransactionFeedView: View {
 
     // MARK: - Transaction Section
 
-    private func transactionSection(group: (key: String, transactions: [TransactionEntity])) -> some View {
+    private func transactionSection(group: TransactionListViewModel.TransactionGroup) -> some View {
         Section {
             ForEach(group.transactions) { txn in
                 VStack(spacing: 0) {
@@ -408,49 +408,16 @@ struct TransactionFeedView: View {
                             Task { await viewModel.loadMoreIfNeeded() }
                         }
                     }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            withAnimation {
-                                viewModel.deleteTransaction(id: txn.id)
-                            }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-
-                        Button {
-                            reviewTransaction = txn
-                        } label: {
-                            Label("Review", systemImage: "tag")
-                        }
-                        .tint(Color.warningAmber)
-                    }
-                    // Left-edge swipe: tag this transaction as a Need (green) or a Want (amber).
-                    // A third button clears any override so the category's default applies.
-                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                        Button {
-                            withAnimation { viewModel.setIntentOverride(transaction: txn, intent: .need) }
-                        } label: {
-                            Label("Need", systemImage: CategoryIntent.need.icon)
-                        }
-                        .tint(CategoryIntent.need.color)
-
-                        Button {
-                            withAnimation { viewModel.setIntentOverride(transaction: txn, intent: .want) }
-                        } label: {
-                            Label("Want", systemImage: CategoryIntent.want.icon)
-                        }
-                        .tint(CategoryIntent.want.color)
-
-                        if txn.intentOverride != nil {
-                            Button {
-                                withAnimation { viewModel.setIntentOverride(transaction: txn, intent: nil) }
-                            } label: {
-                                Label("Clear", systemImage: "arrow.uturn.backward")
-                            }
-                            .tint(Color.neutralGray)
-                        }
-                    }
-
+                    // NOTE: `.swipeActions` used to be attached here (delete /
+                    // review on trailing, need / want / clear on leading). It
+                    // was dead weight: `.swipeActions` only functions inside a
+                    // `List`, and this feed is a `LazyVStack` — which is
+                    // precisely why TransactionRowView carries its own
+                    // DragGesture (PF-14). The modifiers still built 5 Buttons
+                    // and Labels per row that could never render, on every
+                    // body evaluation. Delete + review remain reachable from
+                    // the row's tap-through detail sheet; need/want/clear from
+                    // the row's drag gesture and long-press context menu.
                     if txn.id != group.transactions.last?.id {
                         Divider()
                             .background(Color.textTertiary.opacity(0.3))
@@ -468,9 +435,11 @@ struct TransactionFeedView: View {
         }
     }
 
-    private func transactionSectionHeader(for group: (key: String, transactions: [TransactionEntity])) -> some View {
-        let debitTotal = group.transactions.filter(\.isDebit).reduce(Decimal(0)) { $0 + $1.amount }
-        let creditTotal = group.transactions.filter(\.isCredit).reduce(Decimal(0)) { $0 + $1.amount }
+    private func transactionSectionHeader(for group: TransactionListViewModel.TransactionGroup) -> some View {
+        // Totals arrive precomputed from groupTransactions — this header is
+        // pinned, so SwiftUI re-evaluates it constantly during scroll.
+        let debitTotal = group.debitTotal
+        let creditTotal = group.creditTotal
         let hasOnlyCredits = debitTotal == 0
 
         return HStack {

@@ -14,7 +14,7 @@ final class TransactionListViewModel {
     // MARK: - State
     var allTransactions: [TransactionEntity] = []
     var filteredTransactions: [TransactionEntity] = []
-    var groupedTransactions: [(key: String, transactions: [TransactionEntity])] = []
+    var groupedTransactions: [TransactionGroup] = []
     var pendingReviewTransactions: [TransactionEntity] = []
 
     var searchText: String = "" {
@@ -212,9 +212,20 @@ final class TransactionListViewModel {
     }
 
     // MARK: - Grouping
-    func groupTransactions(_ txns: [TransactionEntity]) -> [(key: String, transactions: [TransactionEntity])] {
+    /// One day-section of the feed. `debitTotal` / `creditTotal` are computed
+    /// once here at grouping time rather than inside the pinned section header,
+    /// which SwiftUI re-evaluates constantly while scrolling — two
+    /// `filter().reduce()` passes per header per frame was pure waste.
+    struct TransactionGroup: Identifiable {
+        let key: String
+        let transactions: [TransactionEntity]
+        let debitTotal: Decimal
+        let creditTotal: Decimal
+        var id: String { key }
+    }
+
+    func groupTransactions(_ txns: [TransactionEntity]) -> [TransactionGroup] {
         let calendar = Calendar.current
-        var groups: [(key: String, transactions: [TransactionEntity])] = []
         var keyedMap: [String: [TransactionEntity]] = [:]
         var keyOrder: [String] = []
 
@@ -227,11 +238,21 @@ final class TransactionListViewModel {
             keyedMap[key]?.append(txn)
         }
 
-        for key in keyOrder {
-            groups.append((key: key, transactions: keyedMap[key] ?? []))
+        return keyOrder.map { key in
+            let rows = keyedMap[key] ?? []
+            // Single pass for both totals instead of two filter+reduce passes.
+            var debit: Decimal = 0
+            var credit: Decimal = 0
+            for t in rows {
+                if t.isDebit { debit += t.amount } else { credit += t.amount }
+            }
+            return TransactionGroup(
+                key: key,
+                transactions: rows,
+                debitTotal: debit,
+                creditTotal: credit
+            )
         }
-
-        return groups
     }
 
     private let groupHeaderFormatter: DateFormatter = {
@@ -332,18 +353,80 @@ final class TransactionListViewModel {
         var updated = transaction
         updated.intentOverride = intent
         transactionRepo.update(updated)
-        if let idx = allTransactions.firstIndex(where: { $0.id == transaction.id }) {
+        patchInPlace(updated)
+    }
+
+    /// Replace a single transaction everywhere it's cached without re-running
+    /// the whole filter → sort → group pipeline.
+    ///
+    /// `applyFilters()` rebuilds `filteredTransactions` AND every
+    /// `TransactionGroup`, which hands SwiftUI brand-new array identities and
+    /// forces it to diff the entire feed. For a one-row edit (intent override,
+    /// note, tag, recurring flag) that's the difference between re-rendering
+    /// one row and re-rendering all of them — very visible as lag when you
+    /// swipe a row to mark Need/Want.
+    ///
+    /// Intent/notes/tags never affect membership or ordering, so surgical
+    /// replacement is safe. Anything that COULD change filtering or sort order
+    /// (category edits under an active category filter, date changes, deletes)
+    /// still goes through `applyFilters()`.
+    private func patchInPlace(_ updated: TransactionEntity) {
+        if let idx = allTransactions.firstIndex(where: { $0.id == updated.id }) {
             allTransactions[idx] = updated
         }
-        applyFilters()
+        if let idx = filteredTransactions.firstIndex(where: { $0.id == updated.id }) {
+            filteredTransactions[idx] = updated
+        }
+        for gIdx in groupedTransactions.indices {
+            guard let rIdx = groupedTransactions[gIdx].transactions
+                .firstIndex(where: { $0.id == updated.id }) else { continue }
+            var rows = groupedTransactions[gIdx].transactions
+            rows[rIdx] = updated
+            // Totals can shift if the amount or direction changed.
+            var debit: Decimal = 0
+            var credit: Decimal = 0
+            for t in rows {
+                if t.isDebit { debit += t.amount } else { credit += t.amount }
+            }
+            groupedTransactions[gIdx] = TransactionGroup(
+                key: groupedTransactions[gIdx].key,
+                transactions: rows,
+                debitTotal: debit,
+                creditTotal: credit
+            )
+            break
+        }
     }
 
     func updateTransaction(_ updated: TransactionEntity) {
         transactionRepo.update(updated)
-        if let idx = allTransactions.firstIndex(where: { $0.id == updated.id }) {
-            allTransactions[idx] = updated
+
+        // Only fall back to the full filter → sort → group rebuild when the
+        // edit could actually change which rows show or in what order. Edits
+        // from the detail sheet are usually notes / tags / account / recurring
+        // / intent, none of which move a row — those take the cheap path.
+        let previous = allTransactions.first { $0.id == updated.id }
+        let affectsMembershipOrOrder: Bool = {
+            guard let previous else { return true }
+            return previous.categorySlug != updated.categorySlug   // category filter
+                || previous.type         != updated.type           // type filter
+                || previous.source       != updated.source         // source filter
+                || previous.tags         != updated.tags           // tag filter
+                || previous.amount       != updated.amount         // amountDesc sort
+                || previous.date         != updated.date           // date sort + day grouping
+                || previous.merchantName != updated.merchantName   // search text
+                || previous.merchantRaw  != updated.merchantRaw
+                || previous.notes        != updated.notes
+        }()
+
+        if affectsMembershipOrOrder {
+            if let idx = allTransactions.firstIndex(where: { $0.id == updated.id }) {
+                allTransactions[idx] = updated
+            }
+            applyFilters()
+        } else {
+            patchInPlace(updated)
         }
-        applyFilters()
     }
 
     func deleteTransaction(id: UUID) {
