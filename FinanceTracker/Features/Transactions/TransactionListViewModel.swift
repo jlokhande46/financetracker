@@ -55,7 +55,11 @@ final class TransactionListViewModel {
     private(set) var hasMorePages: Bool = false
     /// Default page size — chosen to keep initial load fast on big histories
     /// while still filling 1-2 screens of the feed for the average user.
-    private let pageSize = 100
+    /// 50 rather than 100: per-page cost is dominated by model→entity
+    /// conversion, so halving the page halves the worst-case hitch. The
+    /// prefetch threshold below starts the next page early enough that the
+    /// smaller page size is never visible as an empty scroll.
+    private let pageSize = 50
 
     var hasActiveFilters: Bool {
         selectedCategory != nil || selectedSource != nil || selectedType != nil || !selectedTags.isEmpty
@@ -95,6 +99,10 @@ final class TransactionListViewModel {
         isLoading = true
         defer { isLoading = false }
 
+        // Drop memoised day headers so "Today"/"Yesterday" can't go stale if
+        // the app sat open across midnight.
+        dayKeyCache.removeAll(keepingCapacity: true)
+
         // Rebuild account lookup
         let accounts = accountRepo?.fetchAll() ?? []
         accountMap = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
@@ -122,23 +130,80 @@ final class TransactionListViewModel {
     /// Loads the next older page when the feed scrolls near the bottom.
     /// No-op when pagination is exhausted, a fetch is already in flight, or
     /// the view is in filter/search mode (which holds the full result set).
-    /// Tiny debounce (100ms) avoids the scenario where multiple rows near
-    /// the bottom all fire onAppear within the same scroll frame and pile
-    /// up redundant fetches / re-renders.
+    ///
+    /// The `isLoadingMore` flag already collapses the burst of `onAppear`
+    /// calls that fire as several trailing rows enter view together, so no
+    /// artificial debounce is needed — an earlier 100ms `Task.sleep` here was
+    /// pure added latency on the exact interaction it was meant to smooth.
     func loadMoreIfNeeded() async {
         guard hasMorePages, !isLoadingMore else { return }
         guard !hasActiveFilters && searchText.isEmpty else { return }
-        try? await Task.sleep(nanoseconds: 100_000_000)
-        guard hasMorePages, !isLoadingMore else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
 
         let page = transactionRepo.fetchPage(beforeDate: oldestLoadedDate, limit: pageSize)
+        guard !page.transactions.isEmpty else {
+            hasMorePages = page.hasMore
+            return
+        }
+
         allTransactions.append(contentsOf: page.transactions)
         oldestLoadedDate = page.oldestDate ?? oldestLoadedDate
         hasMorePages = page.hasMore
-        rebuildKnownTags()
-        applyFilters()
+
+        // Union just the new page's tags rather than rescanning every loaded row.
+        var tagSet = Set(allKnownTags)
+        for t in page.transactions { for tag in t.tags { tagSet.insert(tag) } }
+        allKnownTags = Array(tagSet).sorted()
+
+        // `fetchPage` walks strictly backwards in time, so under the default
+        // newest-first sort the incoming rows all belong AFTER everything
+        // already on screen. That lets us splice them on in O(page) instead of
+        // re-filtering, re-sorting and re-grouping the entire accumulated set
+        // — which made each successive page cost more than the last (page 5
+        // was re-processing 500 rows) and is what produced the multi-second
+        // hitch when scrolling back through history.
+        //
+        // The other sort orders interleave with existing rows, so they still
+        // take the full rebuild.
+        if sortOrder == .dateDesc {
+            appendPageToGroups(page.transactions)
+        } else {
+            applyFilters()
+        }
+    }
+
+    /// Splice a newly-fetched page onto the end of the existing feed.
+    /// Rows continuing the last visible day extend that group; the rest form
+    /// new groups after it.
+    private func appendPageToGroups(_ newRows: [TransactionEntity]) {
+        filteredTransactions.append(contentsOf: newRows)
+
+        let calendar = Calendar.current
+        var groups = groupedTransactions
+
+        for txn in newRows {
+            let key = relativeDay(for: txn.date, calendar: calendar)
+            if let last = groups.last, last.key == key {
+                var rows = last.transactions
+                rows.append(txn)
+                groups[groups.count - 1] = TransactionGroup(
+                    key: key,
+                    transactions: rows,
+                    debitTotal: last.debitTotal + (txn.isDebit ? txn.amount : 0),
+                    creditTotal: last.creditTotal + (txn.isCredit ? txn.amount : 0)
+                )
+            } else {
+                groups.append(TransactionGroup(
+                    key: key,
+                    transactions: [txn],
+                    debitTotal: txn.isDebit ? txn.amount : 0,
+                    creditTotal: txn.isCredit ? txn.amount : 0
+                ))
+            }
+        }
+
+        groupedTransactions = groups
     }
 
     /// Returns true if the given transaction is among the trailing rows of
@@ -146,7 +211,7 @@ final class TransactionListViewModel {
     /// the next page. Threshold keeps the user from ever seeing an empty scroll.
     func isNearEndOfLoadedSet(_ transaction: TransactionEntity) -> Bool {
         guard hasMorePages else { return false }
-        let prefetchThreshold = 15
+        let prefetchThreshold = 25
         guard let idx = allTransactions.firstIndex(where: { $0.id == transaction.id }) else { return false }
         return idx >= allTransactions.count - prefetchThreshold
     }
@@ -261,7 +326,22 @@ final class TransactionListViewModel {
         return f
     }()
 
+    /// Day-header strings memoised by start-of-day. `DateFormatter.string(from:)`
+    /// costs tens of microseconds and grouping called it once PER TRANSACTION —
+    /// so a 500-row feed paid 500 formatter calls every time it regrouped. A
+    /// feed spans maybe 30-60 distinct days, so caching collapses that to one
+    /// call per day.
+    private var dayKeyCache: [Date: String] = [:]
+
     private func relativeDay(for date: Date, calendar: Calendar) -> String {
+        let dayStart = calendar.startOfDay(for: date)
+        if let cached = dayKeyCache[dayStart] { return cached }
+        let key = computeRelativeDay(for: date, calendar: calendar)
+        dayKeyCache[dayStart] = key
+        return key
+    }
+
+    private func computeRelativeDay(for date: Date, calendar: Calendar) -> String {
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
         return groupHeaderFormatter.string(from: date)
