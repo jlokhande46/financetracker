@@ -95,10 +95,12 @@ struct SMSActivityView: View {
 
     private var summaryBar: some View {
         HStack(spacing: Spacing.sm) {
-            stat(label: "Received", count: events.count(where: { $0.kind == .receivedViaIntent || $0.kind == .receivedViaURL }), color: .brandPrimary)
-            stat(label: "Saved", count: events.count(where: { $0.kind == .savedAsTransaction }), color: .incomeGreen)
-            stat(label: "Failed", count: events.count(where: { $0.kind == .parseFailed }), color: .expenseRed)
-            stat(label: "Skipped", count: events.count(where: { $0.kind == .enqueueDeduped || $0.kind == .savedDeduped }), color: .warningAmber)
+            // `filter { }.count` rather than `count(where:)` — the latter is
+            // Swift 6 only and this target builds on Swift 5.x.
+            stat(label: "Received", count: events.filter { $0.kind == .receivedViaIntent || $0.kind == .receivedViaURL }.count, color: .brandPrimary)
+            stat(label: "Saved", count: events.filter { $0.kind == .savedAsTransaction }.count, color: .incomeGreen)
+            stat(label: "Failed", count: events.filter { $0.kind == .parseFailed }.count, color: .expenseRed)
+            stat(label: "Skipped", count: events.filter { $0.kind == .enqueueDeduped || $0.kind == .savedDeduped }.count, color: .warningAmber)
         }
     }
 

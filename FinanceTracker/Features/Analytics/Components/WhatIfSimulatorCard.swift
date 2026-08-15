@@ -21,9 +21,20 @@ struct WhatIfSimulatorCard: View {
     private var totalInvested: Double { monthlyAmount * years * 12 }
     private var totalReturns: Double { projectedValue - totalInvested }
 
-    private var chartPoints: [(year: Int, value: Double)] {
+    /// Swift has no key paths into tuple elements, so `Chart(_:id:)` needs a
+    /// real Identifiable type rather than `[(year: Int, value: Double)]`.
+    private struct ProjectionPoint: Identifiable {
+        let year: Int
+        let value: Double
+        var id: Int { year }
+    }
+
+    private var chartPoints: [ProjectionPoint] {
         (0...Int(years)).map { y in
-            (y, sipFutureValue(monthly: monthlyAmount, annualRate: annualReturnPct / 100, years: Double(y)))
+            ProjectionPoint(
+                year: y,
+                value: sipFutureValue(monthly: monthlyAmount, annualRate: annualReturnPct / 100, years: Double(y))
+            )
         }
     }
 
@@ -62,7 +73,7 @@ struct WhatIfSimulatorCard: View {
     }
 
     private var projectionChart: some View {
-        Chart(chartPoints, id: \.year) { point in
+        Chart(chartPoints) { point in
             AreaMark(
                 x: .value("Year", point.year),
                 y: .value("Value", point.value)
@@ -83,8 +94,14 @@ struct WhatIfSimulatorCard: View {
             .interpolationMethod(.catmullRom)
         }
         .chartXAxis {
+            // `value.as(Int.self)` reads the plotted year. `value.index` would
+            // give the tick's position in the axis, not the data value.
             AxisMarks { value in
-                AxisValueLabel { Text("\(value.index)y") .font(.micro) }
+                AxisValueLabel {
+                    if let year = value.as(Int.self) {
+                        Text("\(year)y").font(.micro)
+                    }
+                }
             }
         }
         .chartYAxis(.hidden)

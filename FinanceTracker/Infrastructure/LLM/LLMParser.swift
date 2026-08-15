@@ -302,7 +302,11 @@ final class LLMParser {
 
     /// Shape returned by the LLM for a single transaction. Mirrors the
     /// system-prompt schema.
-    private struct LLMTransactionDTO: Decodable {
+    /// `fileprivate` (not `private`) because the `toResult` conversion lives
+    /// in a file-scope extension below — a `private` nested type isn't
+    /// visible there, which fails with "inaccessible due to 'private'
+    /// protection level".
+    fileprivate struct LLMTransactionDTO: Decodable {
         let amount: Decimal
         let type: String
         let merchantRaw: String
