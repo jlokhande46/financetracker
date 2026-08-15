@@ -90,7 +90,7 @@ struct FinanceTrackerApp: App {
                             // queue will be drained once Face ID clears and the
                             // scenePhase .active path runs.
                             if !faceIDEnabled || isUnlocked {
-                                appContainer.processPendingSMS()
+                                Task { await appContainer.processPendingSMS() }
                             }
                         }
                     }
@@ -112,12 +112,12 @@ struct FinanceTrackerApp: App {
                 // Drain any SMS queued by LogBankSMSIntent while the phone was locked.
                 // Only run when the app is actually accessible (not hidden behind lock screen).
                 if phase == .active && (!faceIDEnabled || isUnlocked) {
-                    appContainer.processPendingSMS()
+                    Task { await appContainer.processPendingSMS() }
                 }
             }
             .onChange(of: isUnlocked) { _, unlocked in
                 // Process any SMS queued while the app was behind the lock screen.
-                if unlocked { appContainer.processPendingSMS() }
+                if unlocked { Task { await appContainer.processPendingSMS() } }
             }
             .onChange(of: faceIDEnabled) { _, enabled in
                 // If the user turns the toggle off, ensure the app stays unlocked.

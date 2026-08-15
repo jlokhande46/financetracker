@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var toastType: ToastType = .success
     @State private var pendingImport: PDFImportPayload? = nil
     @State private var showDeveloperOptions: Bool = false
+    @State private var showLLMSettings: Bool = false
 
     /// Held in @State between parse and user confirmation. Carries the parsed
     /// result + the suggested account so the sheet can pre-fill.
@@ -67,8 +68,13 @@ struct SettingsView: View {
                 parsed: payload.parsed,
                 suggestedAccount: payload.suggestedAccount,
                 filename: payload.filename
-            ) { chosenAccount in
-                performImport(parsed: payload.parsed, account: chosenAccount)
+            ) { chosenAccount, effectiveTxns in
+                // Sheet returns the merged native + LLM transaction set;
+                // swap it into the parsed struct so performImport's existing
+                // save path applies uniformly.
+                var effective = payload.parsed
+                effective.transactions = effectiveTxns
+                performImport(parsed: effective, account: chosenAccount)
                 pendingImport = nil
             }
             .presentationDetents([.large])
@@ -76,6 +82,11 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showDeveloperOptions) {
             DeveloperOptionsView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showLLMSettings) {
+            LLMSettingsSheet()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -293,6 +304,17 @@ struct SettingsView: View {
                     subtitle: "Download as CSV"
                 ) {
                     showSuccessToast("Export started — check Files app")
+                }
+
+                Divider().background(Color.bgElevated)
+
+                SettingsRow(
+                    icon: "sparkles",
+                    iconColor: .brandAccent,
+                    title: "AI Parsing (Beta)",
+                    subtitle: LLMSettings.isReady ? "Enabled · fallback for unknown formats" : "Fallback when built-in parser can't read a format"
+                ) {
+                    showLLMSettings = true
                 }
 
                 Divider().background(Color.bgElevated)

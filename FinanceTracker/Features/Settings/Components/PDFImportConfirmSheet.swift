@@ -8,17 +8,25 @@ struct PDFImportConfirmSheet: View {
     let parsed: PDFParseResult
     let suggestedAccount: AccountEntity?
     let filename: String
-    var onConfirm: (AccountEntity?) -> Void
+    /// Called with the chosen account + the effective transaction list
+    /// (native results, plus any LLM fallback additions the user opted
+    /// into). Empty array is valid — statement-only imports still work.
+    var onConfirm: (AccountEntity?, [TransactionEntity]) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appContainer) private var container
     @State private var selectedAccountId: UUID?
     @State private var didTrySync: Bool = false
+    // LLM fallback runtime state — only used when the native parser found
+    // zero transactions AND the LLM beta is enabled.
+    @State private var llmParsedTransactions: [TransactionEntity] = []
+    @State private var isLLMParsing: Bool = false
+    @State private var llmFailureMessage: String? = nil
 
     init(parsed: PDFParseResult,
          suggestedAccount: AccountEntity?,
          filename: String,
-         onConfirm: @escaping (AccountEntity?) -> Void) {
+         onConfirm: @escaping (AccountEntity?, [TransactionEntity]) -> Void) {
         self.parsed = parsed
         self.suggestedAccount = suggestedAccount
         self.filename = filename
@@ -37,7 +45,15 @@ struct PDFImportConfirmSheet: View {
         availableAccounts.first { $0.id == selectedAccountId }
     }
 
-    private var transactionsCount: Int { parsed.transactions.count }
+    /// Effective transaction count — native + any LLM-added.
+    private var transactionsCount: Int { parsed.transactions.count + llmParsedTransactions.count }
+
+    /// Show the LLM fallback CTA only when native found nothing, we have
+    /// the raw text to feed the LLM, and the user has explicitly turned
+    /// beta on with a stored key.
+    private var canOfferLLMFallback: Bool {
+        parsed.transactions.isEmpty && parsed.rawText != nil && LLMSettings.isReady
+    }
 
     private var hasStatementInfo: Bool {
         parsed.dueDate != nil && parsed.totalDue != nil
@@ -53,6 +69,11 @@ struct PDFImportConfirmSheet: View {
                         headerCard
                         accountPicker
                         if hasStatementInfo { statementCard }
+
+                        // LLM fallback prompt when native parse found nothing.
+                        if canOfferLLMFallback {
+                            llmFallbackCard
+                        }
 
                         // Confirm button
                         Button { confirm() } label: {
@@ -353,8 +374,115 @@ struct PDFImportConfirmSheet: View {
 
     private func confirm() {
         guard canConfirm else { return }
-        onConfirm(selectedAccount)
+        // Combine native + LLM-added rows so the parent import path can
+        // saveBulk them as one atomic batch (dedup by rawContent stays intact).
+        let effective = parsed.transactions + llmParsedTransactions
+        onConfirm(selectedAccount, effective)
         dismiss()
+    }
+
+    // MARK: - LLM fallback subview
+
+    private var llmFallbackCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.brandAccent)
+                Text("Try AI parsing (Beta)")
+                    .font(.titleMedium)
+                    .foregroundStyle(Color.textPrimary)
+            }
+            Text("Built-in parser found no transactions in this PDF. Send the extracted text to the LLM (Anthropic) for a best-effort extraction? Native parsers still run first — nothing goes to the API unless you tap below.")
+                .font(.caption)
+                .foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !llmParsedTransactions.isEmpty {
+                Text("AI extracted \(llmParsedTransactions.count) transaction\(llmParsedTransactions.count == 1 ? "" : "s"). Review after import — tag anything wrong via Quick Review.")
+                    .font(.caption)
+                    .foregroundStyle(Color.incomeGreen)
+                    .padding(.top, 4)
+            } else if let msg = llmFailureMessage {
+                Text(msg)
+                    .font(.caption)
+                    .foregroundStyle(Color.expenseRed)
+                    .padding(.top, 4)
+            }
+
+            Button {
+                runLLMParse()
+            } label: {
+                HStack(spacing: Spacing.sm) {
+                    if isLLMParsing {
+                        ProgressView().tint(.white).scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    Text(isLLMParsing ? "Sending to LLM…" : (llmParsedTransactions.isEmpty ? "Try AI parsing" : "Re-run AI parsing"))
+                        .font(.bodyMedium)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Spacing.sm + 2)
+                .background(Color.brandAccent)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            }
+            .buttonStyle(.plain)
+            .disabled(isLLMParsing)
+        }
+        .padding(Spacing.base)
+        .background(Color.brandAccent.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(Color.brandAccent.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private func runLLMParse() {
+        guard let rawText = parsed.rawText, !isLLMParsing else { return }
+        isLLMParsing = true
+        llmFailureMessage = nil
+        Task {
+            let results = await LLMParser.shared.parsePDFText(rawText)
+            await MainActor.run {
+                isLLMParsing = false
+                if results.isEmpty {
+                    llmFailureMessage = "LLM found no transactions either. Check API key + network + model, or import manually."
+                } else {
+                    // Convert ParsedSMSResult → TransactionEntity, running the
+                    // same normaliser + classifier the native path uses so the
+                    // rows drop into the feed with proper category + display
+                    // names. Confidence gets a slight discount so review flags
+                    // anything the LLM was unsure about.
+                    llmParsedTransactions = results.map { r in
+                        let merchant = MerchantNormalizer.shared.normalize(r.merchantRaw)
+                        let classification = CategoryClassifier.shared.classify(
+                            merchantName: merchant,
+                            amount: r.amount,
+                            type: r.type
+                        )
+                        let confidence = min(classification.confidence, 0.75)
+                        return TransactionEntity(
+                            amount: r.amount,
+                            type: r.type,
+                            merchantRaw: r.merchantRaw,
+                            merchantName: merchant.isEmpty ? r.merchantRaw : merchant,
+                            categorySlug: classification.categorySlug,
+                            date: r.date ?? Date(),
+                            source: .pdf,
+                            confidence: confidence,
+                            isConfirmed: confidence >= 0.85,
+                            upiRef: r.upiRef,
+                            bankRef: r.bankRef,
+                            rawContent: r.rawText.isEmpty ? nil : r.rawText
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private func formattedDate(_ d: Date) -> String {
