@@ -9,6 +9,11 @@ final class AccountModel {
     var typeRaw: String = "savings"
     var last4: String?
     var balance: Double = 0
+    /// Starting balance the derived `balance` is computed from. User-editable.
+    var openingBalance: Double = 0
+    /// One-time flag: on upgrade we fold the old static `balance` into
+    /// `openingBalance` so displayed figures don't jump for existing installs.
+    var didSeedOpeningBalance: Bool = false
     var creditLimit: Double?
     var colorHex: String = "#7B6EF6"
     var isActive: Bool = true
@@ -30,6 +35,8 @@ final class AccountModel {
         typeRaw: String = "savings",
         last4: String? = nil,
         balance: Double = 0,
+        openingBalance: Double = 0,
+        didSeedOpeningBalance: Bool = false,
         creditLimit: Double? = nil,
         colorHex: String = "#7B6EF6",
         isActive: Bool = true,
@@ -43,6 +50,8 @@ final class AccountModel {
         self.typeRaw = typeRaw
         self.last4 = last4
         self.balance = balance
+        self.openingBalance = openingBalance
+        self.didSeedOpeningBalance = didSeedOpeningBalance
         self.creditLimit = creditLimit
         self.colorHex = colorHex
         self.isActive = isActive
@@ -59,6 +68,7 @@ final class AccountModel {
             type: type,
             last4: last4,
             balance: Decimal(balance),
+            openingBalance: Decimal(openingBalance),
             creditLimit: creditLimit.map { Decimal($0) },
             colorHex: colorHex,
             isActive: isActive,

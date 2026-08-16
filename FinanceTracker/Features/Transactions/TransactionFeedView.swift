@@ -9,6 +9,7 @@ struct TransactionFeedView: View {
     @State private var showQuickReview: Bool = false
     @State private var showBulkToast: Bool = false
     @State private var bulkToastMessage: String = ""
+    @Environment(\.appContainer) private var container
 
     init(transactionRepo: TransactionRepositoryImpl, accountRepo: AccountRepositoryImpl? = nil) {
         self._viewModel = State(initialValue: TransactionListViewModel(transactionRepo: transactionRepo, accountRepo: accountRepo))
@@ -96,8 +97,15 @@ struct TransactionFeedView: View {
             }
             .sheet(isPresented: $viewModel.showAddSheet) {
                 AddTransactionView { newTxn in
-                    viewModel.allTransactions.insert(newTxn, at: 0)
-                    viewModel.applyFilters()
+                    // Must go through the view model so the repo actually
+                    // persists it — inserting into the array alone dropped the
+                    // transaction on the next reload.
+                    viewModel.addTransaction(newTxn)
+                    // A manual entry can settle a card statement or be a salary
+                    // credit, so let the cycle/salary machinery re-evaluate.
+                    container?.refreshAccountBalances()
+                    container?.billCycleManager.handleTransactionChange()
+                    container?.salaryWatcher.handleStateChange()
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)

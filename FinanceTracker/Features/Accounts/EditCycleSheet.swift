@@ -100,7 +100,11 @@ struct EditCycleSheet: View {
                     .font(.amount(20, weight: .bold))
                     .foregroundStyle(Color.textPrimary)
                 Spacer()
-                Stepper("", value: value, in: 1...28)
+                // 1...31, not 1...28. Real cards bill on the 30th (HDFC, ICICI here),
+                // and the old cap silently snapped those back to 28. Months
+                // shorter than the chosen day are handled downstream by the
+                // cycle math, which clamps to the month's last valid day.
+                Stepper("", value: value, in: 1...31)
                     .labelsHidden()
             }
             .padding(Spacing.base)

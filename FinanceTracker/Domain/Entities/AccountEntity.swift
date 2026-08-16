@@ -6,7 +6,10 @@ struct AccountEntity: Identifiable, Equatable {
     var bankName: String
     var type: AccountType
     var last4: String?
+    /// Derived: openingBalance combined with this account's transactions.
     var balance: Decimal
+    /// Starting point the derived balance builds on. User-editable.
+    var openingBalance: Decimal
     var creditLimit: Decimal?
     var colorHex: String
     var isActive: Bool
@@ -34,6 +37,7 @@ struct AccountEntity: Identifiable, Equatable {
         type: AccountType,
         last4: String? = nil,
         balance: Decimal = 0,
+        openingBalance: Decimal = 0,
         creditLimit: Decimal? = nil,
         colorHex: String = "#7B6EF6",
         isActive: Bool = true,
@@ -47,6 +51,7 @@ struct AccountEntity: Identifiable, Equatable {
         self.type = type
         self.last4 = last4
         self.balance = balance
+        self.openingBalance = openingBalance
         self.creditLimit = creditLimit
         self.colorHex = colorHex
         self.isActive = isActive

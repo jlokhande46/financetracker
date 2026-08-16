@@ -477,6 +477,8 @@ struct SettingsView: View {
                 return copy
             }
             container.transactionRepo.saveBulk(linked)
+            // Imported rows change what each card owes.
+            container.refreshAccountBalances()
         }
 
         // Save credit-card due date if found

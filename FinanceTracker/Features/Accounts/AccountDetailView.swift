@@ -10,6 +10,8 @@ struct AccountDetailView: View {
     @State private var statement: CardStatementEntity? = nil
     @State private var currentAccount: AccountEntity
     @State private var showEditCycle = false
+    @State private var showEditOpeningBalance = false
+    @State private var openingBalanceDraft: String = ""
 
     init(account: AccountEntity) {
         self.account = account
@@ -21,11 +23,11 @@ struct AccountDetailView: View {
         formatter.numberStyle = .currency
         formatter.currencySymbol = "₹"
         formatter.maximumFractionDigits = 0
-        return formatter.string(from: account.balance as NSDecimalNumber) ?? "₹\(account.balance)"
+        return formatter.string(from: currentAccount.balance as NSDecimalNumber) ?? "₹\(currentAccount.balance)"
     }
 
     private var formattedLimit: String? {
-        guard let l = account.creditLimit else { return nil }
+        guard let l = currentAccount.creditLimit else { return nil }
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencySymbol = "₹"
@@ -56,6 +58,7 @@ struct AccountDetailView: View {
                         if account.type == .credit {
                             cycleCard
                         }
+                        openingBalanceCard
                         recentTransactions
                         Spacer(minLength: 60)
                     }
@@ -73,12 +76,69 @@ struct AccountDetailView: View {
                 }
             }
             .task { load() }
+            .alert("Opening Balance", isPresented: $showEditOpeningBalance) {
+                TextField("Amount", text: $openingBalanceDraft)
+                    .keyboardType(.decimalPad)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") {
+                    guard let value = Decimal(string: openingBalanceDraft.trimmingCharacters(in: .whitespaces)) else { return }
+                    container?.accountRepo.updateOpeningBalance(id: account.id, openingBalance: value)
+                    container?.refreshAccountBalances()
+                    load()
+                }
+            } message: {
+                Text(currentAccount.type == .credit
+                     ? "Amount already outstanding on this card before the transactions FinanceTracker knows about."
+                     : "Amount already in this account before the transactions FinanceTracker knows about.")
+            }
             .sheet(isPresented: $showEditCycle) {
                 EditCycleSheet(account: currentAccount, onSaved: { load() })
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
         }
+    }
+
+    /// Balances are derived (opening balance +/- this account's transactions),
+    /// so the opening figure has to be editable — otherwise a wrong starting
+    /// point makes every downstream number permanently wrong.
+    private var openingBalanceCard: some View {
+        Button {
+            openingBalanceDraft = "\(currentAccount.openingBalance)"
+            showEditOpeningBalance = true
+        } label: {
+            HStack(spacing: Spacing.md) {
+                ZStack {
+                    Circle()
+                        .fill(Color.incomeGreen.opacity(0.15))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "flag.checkered")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.incomeGreen)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Opening Balance")
+                        .font(.bodyMedium)
+                        .foregroundStyle(Color.textPrimary)
+                    Text(currentAccount.type == .credit
+                         ? "Outstanding before tracked transactions"
+                         : "Balance before tracked transactions")
+                        .font(.caption)
+                        .foregroundStyle(Color.textSecondary)
+                }
+                Spacer()
+                Text(currentAccount.openingBalance.currencyString)
+                    .font(.amount(14, weight: .semibold))
+                    .foregroundStyle(Color.textSecondary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.textTertiary)
+            }
+            .padding(Spacing.base)
+            .background(Color.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -159,7 +219,7 @@ struct AccountDetailView: View {
             Spacer().frame(height: 8)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(account.type == .credit ? "Outstanding" : "Balance")
+                Text(currentAccount.type == .credit ? "Outstanding" : "Balance")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
                 Text(formattedBalance)
@@ -167,7 +227,7 @@ struct AccountDetailView: View {
                     .foregroundStyle(.white)
             }
 
-            if let limit = formattedLimit, let pct = account.utilizationPercent {
+            if let limit = formattedLimit, let pct = currentAccount.utilizationPercent {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("Limit \(limit)")

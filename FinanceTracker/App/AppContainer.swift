@@ -36,6 +36,8 @@ class AppContainer {
         // Always sync user's real cards so account auto-linking works
         // regardless of whether sample data was cleared.
         accountRepo.syncUserCards()
+        // Fold legacy static balances into openingBalance exactly once.
+        accountRepo.migrateOpeningBalancesIfNeeded()
 
         // Seed sample transactions on first launch only.
         let seedDisabled = UserDefaults.standard.bool(forKey: "seedDisabled")
@@ -49,6 +51,9 @@ class AppContainer {
         // Run the bill-cycle sweep so any overdue statements are created and any
         // already-paid ones get marked.
         billCycleManager.runDailySweep()
+        // Derive account balances from the transactions on record.
+        refreshAccountBalances()
+
         // Check whether a recent salary should kick off bill reminders for any
         // cycle still unpaid.
         salaryWatcher.handleStateChange()
@@ -175,6 +180,7 @@ class AppContainer {
         }
 
         if savedAny {
+            refreshAccountBalances()
             billCycleManager.handleTransactionChange()
             // A newly-saved salary credit should kick off bill reminders; a
             // newly-saved expense should refresh the unpaid set in case the
@@ -209,6 +215,13 @@ class AppContainer {
         ymd.minute = hms.minute
         ymd.second = hms.second
         return cal.date(from: ymd) ?? enqueuedAt
+    }
+
+    /// Recompute every account balance from its opening balance + linked
+    /// transactions. Call after any write that adds, edits or removes
+    /// transactions (SMS drain, manual add, PDF import, delete).
+    func refreshAccountBalances() {
+        accountRepo.recalculateBalances(from: transactionRepo.fetchAll())
     }
 
     /// Permanently delete every transaction, account, budget, merchant rule, and statement.

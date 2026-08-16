@@ -227,7 +227,11 @@ final class AnalyticsViewModel {
     }
 
     private func isTransfer(_ slug: String) -> Bool {
-        ["transfer", "internal-transfer", "credit-card-payment"].contains(slug)
+        // "cc_payment" is the real slug used by CategoryEntity / the classifier.
+        // This list previously said "credit-card-payment", which matches
+        // nothing — so every credit-card bill payment was counted as ordinary
+        // spending, inflating monthly expenses and skewing the 50/30/20 split.
+        ["transfer", "internal-transfer", "cc_payment"].contains(slug)
     }
 
     private func isSubscriptionCategory(_ slug: String) -> Bool {

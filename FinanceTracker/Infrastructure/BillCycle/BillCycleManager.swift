@@ -135,22 +135,37 @@ final class BillCycleManager {
     // MARK: - Calendar helpers
 
     /// The most recent occurrence of `day` strictly before (or equal to) `reference`.
-    private func mostRecentDay(_ day: Int, before reference: Date, calendar: Calendar) -> Date {
+    /// Build a date for `day` within the month containing `reference`, clamped
+    /// to that month's last valid day.
+    ///
+    /// `Calendar.date(from:)` ROLLS OVER out-of-range days rather than
+    /// clamping — asking for day 31 in February yields March 2nd/3rd, which
+    /// would push a statement into the wrong month entirely. Cards billing on
+    /// the 30th/31st are common (two of the seeded cards use 30), so clamp
+    /// explicitly.
+    private func date(day: Int, inMonthOf reference: Date, calendar: Calendar) -> Date {
         var comps = calendar.dateComponents([.year, .month], from: reference)
-        comps.day = day
-        let thisMonth = calendar.date(from: comps) ?? reference
+        let lastDay = calendar.range(of: .day, in: .month, for: reference)?.upperBound.advanced(by: -1) ?? 28
+        comps.day = min(day, lastDay)
+        return calendar.date(from: comps) ?? reference
+    }
+
+    private func mostRecentDay(_ day: Int, before reference: Date, calendar: Calendar) -> Date {
+        let thisMonth = date(day: day, inMonthOf: reference, calendar: calendar)
         if thisMonth <= reference { return thisMonth }
-        // Step back one month via Calendar arithmetic so Jan → Dec wraps the year correctly.
-        return calendar.date(byAdding: .month, value: -1, to: thisMonth) ?? reference
+        // Step back one month via Calendar arithmetic so Jan → Dec wraps the year correctly,
+        // then re-clamp because the previous month may be shorter.
+        guard let prevMonthAnchor = calendar.date(byAdding: .month, value: -1, to: thisMonth) else { return reference }
+        return date(day: day, inMonthOf: prevMonthAnchor, calendar: calendar)
     }
 
     /// The next occurrence of `day` strictly after `reference`.
     private func nextDay(_ day: Int, after reference: Date, calendar: Calendar) -> Date {
-        var comps = calendar.dateComponents([.year, .month], from: reference)
-        comps.day = day
-        let thisMonth = calendar.date(from: comps) ?? reference
+        let thisMonth = date(day: day, inMonthOf: reference, calendar: calendar)
         if thisMonth > reference { return thisMonth }
-        // Step forward one month via Calendar arithmetic so Dec → Jan wraps the year correctly.
-        return calendar.date(byAdding: .month, value: 1, to: thisMonth) ?? reference
+        // Step forward one month via Calendar arithmetic so Dec → Jan wraps the year correctly,
+        // then re-clamp because the next month may be shorter (e.g. 31 → Feb 28).
+        guard let nextMonthAnchor = calendar.date(byAdding: .month, value: 1, to: thisMonth) else { return reference }
+        return date(day: day, inMonthOf: nextMonthAnchor, calendar: calendar)
     }
 }

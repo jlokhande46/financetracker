@@ -478,6 +478,22 @@ final class TransactionListViewModel {
         }
     }
 
+    /// Persist a brand-new transaction (manual add) and show it immediately.
+    ///
+    /// This previously did NOT exist: `AddTransactionView` handed its entity to
+    /// a closure that only inserted into the in-memory array, so every
+    /// manually-added transaction was lost on the next reload. The repo write
+    /// is the whole point — the local array update is just so the row appears
+    /// without waiting for a refetch.
+    func addTransaction(_ txn: TransactionEntity) {
+        transactionRepo.save(txn)
+        allTransactions.insert(txn, at: 0)
+        for tag in txn.tags where !allKnownTags.contains(tag) {
+            allKnownTags = (allKnownTags + [tag]).sorted()
+        }
+        applyFilters()
+    }
+
     func updateTransaction(_ updated: TransactionEntity) {
         transactionRepo.update(updated)
 
