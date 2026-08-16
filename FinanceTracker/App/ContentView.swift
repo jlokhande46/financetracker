@@ -44,7 +44,9 @@ struct ContentView: View {
             if let container {
                 tabContent(container: container)
             } else {
-                LoadingView()
+                // Cold start — branded splash that continues the static launch
+                // screen rather than cutting to a bare spinner.
+                AppLaunchView()
             }
         }
         .task {

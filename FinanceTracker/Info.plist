@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UILaunchScreenBackgroundColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>FinanceTracker uses Face ID to keep your financial data private when you open the app.</string>
 	<key>CFBundleURLTypes</key>
