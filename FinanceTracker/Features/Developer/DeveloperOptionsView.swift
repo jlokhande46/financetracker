@@ -285,6 +285,14 @@ struct DeveloperOptionsView: View {
                 Divider().background(Color.textTertiary.opacity(0.15)).padding(.leading, 56)
                 statRow(label: "Pending SMS queue", value: "\(pendingSMSCount)", icon: "tray")
                 Divider().background(Color.textTertiary.opacity(0.15)).padding(.leading, 56)
+                // Sideloaded / free-team builds often lose the App Group
+                // entitlement. Without this row that degradation is invisible:
+                // the locked-phone App Intent path stops sharing data and the
+                // only symptom is SMS that never arrive.
+                statRow(label: "App Group",
+                        value: AppGroupStore.isAppGroupAvailable ? "Shared" : "Fallback",
+                        icon: AppGroupStore.isAppGroupAvailable ? "checkmark.shield" : "exclamationmark.shield")
+                Divider().background(Color.textTertiary.opacity(0.15)).padding(.leading, 56)
                 statRow(label: "Dismissed insights", value: "\(dismissedInsightsCount)", icon: "eye.slash")
             }
             .background(Color.bgCard)

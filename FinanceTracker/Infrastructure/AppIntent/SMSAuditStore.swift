@@ -80,9 +80,11 @@ enum SMSAuditStore {
     }
 
     /// Append an event. Safe to call from the App Intent process AND the
-    /// main app (App Group UserDefaults is the shared store).
+    /// main app. Uses the App Group container when entitled, otherwise the
+    /// app's own defaults — the audit trail must never go silent, since it's
+    /// the tool for diagnosing a pipeline that isn't working.
     static func record(_ kind: Kind, text: String, at timestamp: Date = Date(), detail: String? = nil) {
-        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return }
+        let defaults = AppGroupStore.defaults()
         var log = readLog(defaults: defaults)
         log.append(Event(
             timestamp: timestamp,
@@ -101,18 +103,18 @@ enum SMSAuditStore {
 
     /// Newest-first snapshot for UI display.
     static func snapshot() -> [Event] {
-        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return [] }
+        let defaults = AppGroupStore.defaults()
         return readLog(defaults: defaults).reversed()
     }
 
     static func clear() {
-        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return }
+        let defaults = AppGroupStore.defaults()
         defaults.removeObject(forKey: logKey)
         defaults.synchronize()
     }
 
     static var count: Int {
-        guard let defaults = UserDefaults(suiteName: appGroupSuite) else { return 0 }
+        let defaults = AppGroupStore.defaults()
         return readLog(defaults: defaults).count
     }
 

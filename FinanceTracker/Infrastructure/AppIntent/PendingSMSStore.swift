@@ -23,10 +23,11 @@ enum PendingSMSStore {
         let enqueuedAt: Date
     }
 
+    /// Never nil. Falls back to `.standard` when the App Group entitlement is
+    /// unavailable (common on sideloaded / free-team builds) so the in-process
+    /// SMS paths keep working instead of silently dropping every message.
     private static func store() -> UserDefaults? {
-        let defaults = UserDefaults(suiteName: appGroupSuite)
-        assert(defaults != nil, "App Group '\(appGroupSuite)' is not configured — check entitlements")
-        return defaults
+        AppGroupStore.defaults()
     }
 
     /// Adds a raw SMS text to the shared queue alongside the timestamp it
