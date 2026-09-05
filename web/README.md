@@ -3,8 +3,12 @@
 Web port of the iOS app. Exists because free Apple provisioning re-signs every
 7 days, which kept breaking tracking continuity. An installed PWA never expires.
 
-**Status: engine + backend scaffolded. UI not built yet.** The Swift app in
-`../FinanceTracker` still runs and is unaffected by anything here.
+**Status: working app.** Dashboard, transactions feed with review, analytics
+(50/30/20), and settings are all in. The Swift app in `../FinanceTracker` still
+runs and is unaffected by anything here.
+
+Still to come: PDF statement import, recurring bills, goals, and Web Push
+delivery from the Worker cron.
 
 ## Why a backend at all
 
@@ -35,11 +39,14 @@ handler in the Worker.
 ```
 web/
 ├── src/
-│   ├── domain/          types + the 26 categories + 50/30/20 intent map
+│   ├── domain/          types, 26 categories, 50/30/20 map, monthly analysis
 │   ├── parsing/         SMS parsers (8 bank formats) + tests
 │   ├── categorization/  merchant normaliser + classifier cascade + tests
 │   ├── ingest/          dedup -> parse -> normalise -> classify -> store
-│   └── db/              Dexie (IndexedDB) schema + paged reads
+│   ├── db/              Dexie (IndexedDB) schema + paged reads + seed
+│   ├── sync/            server config + inbox drain
+│   ├── state/           feed pagination, grouping, mutations
+│   └── ui/              screens (Dashboard, Transactions, Analytics, Settings)
 └── worker/              Cloudflare Worker + D1 (Shortcut endpoint, Web Push)
 ```
 

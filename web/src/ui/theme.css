@@ -1,0 +1,249 @@
+/* Design tokens carried over from DesignSystem/AppColors.swift + AppSpacing.swift
+   so the web app reads as the same product. Dark is primary, light is opt-in —
+   same as the iOS app. */
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #141418;
+  --bg-card: #1c1c24;
+  --bg-elevated: #252530;
+
+  --brand-primary: #7b6ef6;
+  --brand-accent: #5e52e8;
+  --brand-deep: #4338ca;
+
+  --income-green: #00d09c;
+  --expense-red: #ff6b6b;
+  --warning-amber: #ffb545;
+  --neutral-gray: #8e8e99;
+
+  --text-primary: #ffffff;
+  --text-secondary: #8e8e99;
+  --text-tertiary: #48484e;
+
+  --divider: rgba(255, 255, 255, 0.1);
+  --chart-grid: rgba(255, 255, 255, 0.06);
+
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-base: 16px;
+  --sp-lg: 20px;
+  --sp-xl: 24px;
+  --sp-xxl: 32px;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-full: 999px;
+
+  --tabbar-h: 64px;
+}
+
+:root[data-theme="light"] {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-elevated: #e9e9ef;
+  --text-primary: #1c1c24;
+  --text-secondary: #6c6c72;
+  --text-tertiary: #b0b0b5;
+  --divider: rgba(28, 28, 36, 0.1);
+  --chart-grid: rgba(28, 28, 36, 0.06);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  /* Respect the iPhone notch / home indicator when installed standalone. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  overscroll-behavior-y: none;
+}
+
+button { font: inherit; color: inherit; border: none; background: none; cursor: pointer; }
+input, select { font: inherit; color: inherit; }
+
+/* Numerals should line up in columns of money. */
+.amount {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: var(--r-lg);
+  padding: var(--sp-base);
+}
+
+.muted { color: var(--text-secondary); }
+.tiny { font-size: 11px; }
+.small { font-size: 13px; }
+.h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+.h2 { font-size: 17px; font-weight: 600; }
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.row { display: flex; align-items: center; gap: var(--sp-md); }
+.col { display: flex; flex-direction: column; }
+.spread { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-md); }
+.grow { flex: 1; min-width: 0; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.screen {
+  padding: var(--sp-base);
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--sp-xl));
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+/* Tab bar */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--divider);
+  z-index: 50;
+}
+.tabbar button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  position: relative;
+}
+.tabbar button[aria-current="page"] { color: var(--brand-primary); }
+.tabbar .badge {
+  position: absolute;
+  top: 6px;
+  margin-left: 18px;
+  background: var(--expense-red);
+  color: #fff;
+  border-radius: var(--r-full);
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 15px;
+  padding: 1px 4px;
+  text-align: center;
+}
+
+/* Sheet */
+.sheet-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet {
+  background: var(--bg-primary);
+  width: 100%;
+  max-width: 720px;
+  max-height: 92vh;
+  overflow-y: auto;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: var(--sp-base);
+  padding-bottom: calc(var(--sp-xxl) + env(safe-area-inset-bottom));
+  animation: sheet-up 0.24s ease-out;
+}
+@keyframes sheet-up { from { transform: translateY(8%); opacity: 0.6; } }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-sm);
+  padding: 12px var(--sp-lg);
+  border-radius: var(--r-full);
+  background: var(--brand-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.btn:disabled { background: var(--bg-elevated); color: var(--text-tertiary); cursor: default; }
+.btn-secondary { background: var(--bg-elevated); color: var(--text-primary); }
+.btn-block { width: 100%; }
+
+.field {
+  width: 100%;
+  padding: 12px var(--sp-base);
+  background: var(--bg-card);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  outline: none;
+}
+.field:focus { border-color: var(--brand-primary); }
+
+.chip {
+  padding: 7px 12px;
+  border-radius: var(--r-full);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.chip[data-selected="true"] { background: var(--brand-primary); color: #fff; }
+
+.hscroll {
+  display: flex;
+  gap: var(--sp-sm);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.hscroll::-webkit-scrollbar { display: none; }
+
+.divider { height: 1px; background: var(--divider); }
+
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid var(--text-tertiary);
+  border-top-color: var(--brand-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--sp-base));
+  background: var(--bg-elevated);
+  padding: 10px var(--sp-base);
+  border-radius: var(--r-full);
+  font-size: 13px;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
