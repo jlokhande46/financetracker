@@ -1,0 +1,16 @@
+name = "financetracker-api"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# Bill reminders + the daily finance tip. iOS PWAs can't schedule local
+# notifications, so every reminder has to be pushed from here.
+[triggers]
+crons = ["0 4 * * *"]   # 09:30 IST == 04:00 UTC
+
+[[d1_databases]]
+binding = "DB"
+database_name = "financetracker"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+
+# INGEST_TOKEN is a secret, not a var:
+#   npx wrangler secret put INGEST_TOKEN
