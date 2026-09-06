@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { rupees, type Account } from "../domain/types";
+import type { BillFrequency, RecurringBill } from "../domain/bills";
 
 /**
  * The user's real cards, carried over from Data/SampleData.swift including the
@@ -34,8 +35,70 @@ export async function seedDefaultAccounts(): Promise<number> {
   return missing.length;
 }
 
+/**
+ * The recurring bills the user named: rent, electricity, postpaid and the
+ * credit cards monthly; the gas cylinder every second month.
+ *
+ * Amounts start at zero and due days at a plausible default — both are meant to
+ * be edited. Seeding them beats an empty screen that has to be filled in from
+ * scratch before anything useful shows up.
+ */
+const DEFAULT_BILLS: Array<{
+  id: string; name: string; categorySlug: string; dueDay: number; frequency: BillFrequency;
+}> = [
+  { id: "bill-rent", name: "Rent", categorySlug: "rent", dueDay: 5, frequency: "monthly" },
+  { id: "bill-electricity", name: "Electricity", categorySlug: "bills", dueDay: 12, frequency: "monthly" },
+  { id: "bill-postpaid", name: "Mobile postpaid", categorySlug: "bills", dueDay: 18, frequency: "monthly" },
+  { id: "bill-gas", name: "Gas cylinder", categorySlug: "bills", dueDay: 20, frequency: "bimonthly" },
+];
+
+/** Deterministic id so re-running never duplicates a card's bill. */
+export const cardBillId = (accountId: string) => `bill-card-${accountId}`;
+
+/**
+ * Adds any missing recurring bill, including one per credit card so the Cards
+ * section and the Bills list are backed by the same paid/unpaid state rather
+ * than two views that can disagree.
+ * @returns how many bills were created
+ */
+export async function seedDefaultBills(): Promise<number> {
+  const [existing, accounts] = await Promise.all([db.bills.toArray(), db.accounts.toArray()]);
+  const known = new Set(existing.map((b) => b.id));
+  const now = Date.now();
+  const anchorMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+
+  const fresh: RecurringBill[] = [];
+
+  for (const b of DEFAULT_BILLS) {
+    if (known.has(b.id)) continue;
+    fresh.push({ ...b, expectedAmount: 0, anchorMonth, isActive: true, createdAt: now });
+  }
+
+  for (const a of accounts) {
+    if (a.type !== "credit" || !a.dueDay) continue;
+    const id = cardBillId(a.id);
+    if (known.has(id)) continue;
+    fresh.push({
+      id,
+      name: `${a.name} bill`,
+      categorySlug: "cc_payment",
+      expectedAmount: 0,
+      dueDay: a.dueDay,
+      frequency: "monthly",
+      anchorMonth,
+      accountId: a.id,
+      isActive: true,
+      createdAt: now,
+    });
+  }
+
+  if (fresh.length) await db.bills.bulkPut(fresh);
+  return fresh.length;
+}
+
 /** First-run bootstrap. */
 export async function seedIfEmpty(): Promise<void> {
   const count = await db.accounts.count();
   if (count === 0) await seedDefaultAccounts();
+  if ((await db.bills.count()) === 0) await seedDefaultBills();
 }

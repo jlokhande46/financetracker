@@ -8,6 +8,14 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["icons/*.png"],
+      // A hand-written worker, because a generated one has no `push` handler —
+      // and Web Push is the only way an iOS PWA can deliver a reminder.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+      injectManifest: {
+        globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+      },
       manifest: {
         name: "FinanceTracker",
         short_name: "Finance",
@@ -26,9 +34,6 @@ export default defineConfig({
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
-      },
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
       },
     }),
   ],

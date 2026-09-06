@@ -1,0 +1,19 @@
+{
+  // The service worker gets its own program: a `/// <reference lib="webworker" />`
+  // applies to the whole compilation, and mixing WebWorker with DOM turns
+  // `window` into `never` for every client file.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "types": []
+  },
+  "include": ["src/sw.ts"]
+}

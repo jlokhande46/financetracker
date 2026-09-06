@@ -1,0 +1,22 @@
+{
+  // The Worker runs in neither a browser nor Node, so it gets its own config.
+  // Sharing one with the app is what made `window` resolve to `never` in the
+  // client code — the two global environments genuinely disagree.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    // `node` is here only for the tests, which import node:crypto to play the
+    // receiving browser; the Worker itself uses WebCrypto off globalThis.
+    "types": ["@cloudflare/workers-types", "vitest/globals", "node"]
+  },
+  "include": ["src"]
+}

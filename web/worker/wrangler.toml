@@ -4,13 +4,21 @@ compatibility_date = "2026-01-01"
 
 # Bill reminders + the daily finance tip. iOS PWAs can't schedule local
 # notifications, so every reminder has to be pushed from here.
+#
+# Hourly rather than daily: the reminder cadence ramps as a due date approaches
+# (up to three times a day once a bill is overdue), and a once-a-day cron caps
+# that at one.
 [triggers]
-crons = ["0 4 * * *"]   # 09:30 IST == 04:00 UTC
+crons = ["0 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "financetracker"
 database_id = "REPLACE_WITH_YOUR_D1_ID"
 
-# INGEST_TOKEN is a secret, not a var:
-#   npx wrangler secret put INGEST_TOKEN
+# Secrets, not vars. Set each with `npx wrangler secret put <NAME>`:
+#   INGEST_TOKEN        any long random string; the Shortcut sends it
+#   VAPID_PUBLIC_KEY    from `npm run vapid` — also pasted into the PWA
+#   VAPID_PRIVATE_KEY   from the same command; never leaves the Worker
+#   VAPID_SUBJECT       mailto:you@example.com
+# Push simply stays off until the VAPID pair is set.

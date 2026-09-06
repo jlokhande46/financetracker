@@ -13,3 +13,17 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   payload    TEXT    NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+-- Queued notifications. The PWA works out what it wants to be reminded about
+-- from its own IndexedDB and uploads only the text and the send time, so the
+-- cron can fire them without the server ever seeing a transaction.
+CREATE TABLE IF NOT EXISTS reminders (
+  id      TEXT    PRIMARY KEY,
+  send_at INTEGER NOT NULL,
+  title   TEXT    NOT NULL,
+  body    TEXT    NOT NULL,
+  tag     TEXT    NOT NULL DEFAULT '',
+  url     TEXT    NOT NULL DEFAULT '/',
+  sent    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_pending ON reminders(sent, send_at);

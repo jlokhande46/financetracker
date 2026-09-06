@@ -1,5 +1,8 @@
 import Dexie, { type Table } from "dexie";
 import type { Account, Transaction } from "../domain/types";
+import type { BillPayment, RecurringBill } from "../domain/bills";
+import type { Budget } from "../domain/budgets";
+import type { Goal } from "../domain/goals";
 
 /** A merchant rule the user taught the app during review. */
 export interface MerchantRule {
@@ -38,6 +41,10 @@ class FinanceDB extends Dexie {
   merchantRules!: Table<MerchantRule, string>;
   audit!: Table<AuditEvent, number>;
   outbox!: Table<OutboxItem, number>;
+  bills!: Table<RecurringBill, string>;
+  billPayments!: Table<BillPayment, string>;
+  budgets!: Table<Budget, string>;
+  goals!: Table<Goal, string>;
 
   constructor() {
     super("financetracker");
@@ -49,6 +56,14 @@ class FinanceDB extends Dexie {
       merchantRules: "key",
       audit: "++id, timestamp",
       outbox: "++id, createdAt",
+    });
+    // v2 adds planning. Dexie carries v1 data forward untouched — only the new
+    // stores are created, so an installed PWA upgrades without losing history.
+    this.version(2).stores({
+      bills: "id, categorySlug, accountId",
+      billPayments: "id, billId, periodKey, transactionId",
+      budgets: "id, categorySlug",
+      goals: "id",
     });
   }
 }

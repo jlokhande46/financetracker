@@ -3,19 +3,22 @@ import "./theme.css";
 import { DashboardScreen } from "./screens/Dashboard";
 import { TransactionsScreen, AddTransactionSheet } from "./screens/Transactions";
 import { AnalyticsScreen } from "./screens/Analytics";
+import { PlanScreen } from "./screens/Plan";
 import { SettingsScreen } from "./screens/Settings";
 import { Toast } from "./components";
 import { prefs, serverConfig } from "../sync/config";
 import { syncInbox } from "../sync/sync";
+import { syncReminderSchedule } from "../sync/scheduleSync";
 import { seedIfEmpty } from "../db/seed";
 import { usePendingReview } from "../state/useStore";
 
-type Tab = "home" | "transactions" | "analytics" | "settings";
+type Tab = "home" | "transactions" | "plan" | "analytics" | "settings";
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
   { id: "home", label: "Home", glyph: "◆" },
-  { id: "transactions", label: "Transactions", glyph: "≡" },
-  { id: "analytics", label: "Analytics", glyph: "▤" },
+  { id: "transactions", label: "Activity", glyph: "≡" },
+  { id: "plan", label: "Plan", glyph: "◎" },
+  { id: "analytics", label: "Insights", glyph: "▤" },
   { id: "settings", label: "Settings", glyph: "⚙" },
 ];
 
@@ -36,6 +39,10 @@ export default function App() {
   const refreshData = useCallback(async () => {
     await reloadPending();
     setDataVersion((v) => v + 1);
+    // Reminders live on the server, so anything that changes what's due has to
+    // re-upload the schedule. Failure here is not worth interrupting the user
+    // over — the next launch tries again.
+    void syncReminderSchedule().catch(() => undefined);
   }, [reloadPending]);
 
   // Drain the inbox on launch and whenever the app comes back to the
@@ -74,6 +81,7 @@ export default function App() {
         {tab === "transactions" && (
           <TransactionsScreen hidden={hidden} onToast={showToast} />
         )}
+        {tab === "plan" && <PlanScreen hidden={hidden} onToast={showToast} />}
         {tab === "analytics" && <AnalyticsScreen hidden={hidden} />}
         {tab === "settings" && (
           <SettingsScreen
@@ -85,8 +93,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Quick-add, mirroring the iOS FAB. Hidden on Settings where it'd be noise. */}
-      {tab !== "settings" && (
+      {/* Quick-add, mirroring the iOS FAB. Hidden where it'd be noise: Settings,
+          and Plan whose sections carry their own add buttons. */}
+      {tab !== "settings" && tab !== "plan" && (
         <button
           onClick={() => setAdding(true)}
           aria-label="Add transaction"

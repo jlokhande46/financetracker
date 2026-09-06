@@ -1,9 +1,13 @@
 import { useMemo, useState } from "react";
 import { analyseMonth, addMonths, startOfMonth } from "../../domain/analysis";
 import { findCategory } from "../../domain/categories";
+import { creditCardBillDates } from "../../domain/billMatching";
+import { dueDescription, STATE_META } from "../../domain/bills";
+import { tipOfTheDay } from "../../domain/tips";
 import { Bar, CategoryDot, EmptyState } from "../components";
-import { money, moneyCompact, monthYear, percent } from "../format";
+import { fullDate, money, moneyCompact, monthYear, percent } from "../format";
 import { useAccounts, useAllTransactions, usePendingReview } from "../../state/useStore";
+import { usePlan } from "../../state/usePlan";
 import type { Account } from "../../domain/types";
 
 export function DashboardScreen({
@@ -12,13 +16,19 @@ export function DashboardScreen({
   const { all, loading } = useAllTransactions();
   const { accounts } = useAccounts();
   const { pending } = usePendingReview();
+  const plan = usePlan(all);
   const [month, setMonth] = useState(() => startOfMonth(Date.now()));
+  const tip = useMemo(() => tipOfTheDay(), []);
 
   const analysis = useMemo(() => analyseMonth(month, all), [month, all]);
   const isCurrentMonth = month === startOfMonth(Date.now());
 
   const creditCards = accounts.filter((a) => a.isActive && a.type === "credit");
   const deposits = accounts.filter((a) => a.isActive && a.type !== "credit");
+
+  // Only what's close enough to act on. A bill three weeks out is noise here;
+  // the Plan tab has the full list.
+  const upcoming = plan.billStatuses.filter((s) => !s.isPaid && s.daysUntilDue <= 10).slice(0, 5);
 
   if (loading) {
     return (
@@ -74,6 +84,29 @@ export function DashboardScreen({
               </span>
               <span className="muted">›</span>
             </button>
+          )}
+
+          {/* What's actually outstanding right now, ahead of the month's
+              analysis — it's the thing that needs acting on today. */}
+          {upcoming.length > 0 && (
+            <section className="card col" style={{ gap: "var(--sp-md)" }}>
+              <span className="section-label">Coming up</span>
+              {upcoming.map((s) => (
+                <div key={s.bill.id} className="spread">
+                  <span className="col" style={{ gap: 2 }}>
+                    <span className="small">{s.bill.name}</span>
+                    <span className="tiny" style={{ color: STATE_META[s.state].color }}>
+                      {dueDescription(s)}
+                    </span>
+                  </span>
+                  {s.bill.expectedAmount > 0 && (
+                    <span className="small amount" style={{ fontWeight: 600 }}>
+                      {money(s.bill.expectedAmount, hidden)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </section>
           )}
 
           {analysis.categoryBreakdown.length > 0 && (
@@ -146,6 +179,13 @@ export function DashboardScreen({
           )}
         </>
       )}
+
+      {/* Stable through the day, and the same text the daily push carries —
+          a tip that reshuffles on every render just reads as noise. */}
+      <section className="card col" style={{ gap: 6 }}>
+        <span className="section-label">Money tip</span>
+        <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>{tip.text}</p>
+      </section>
     </div>
   );
 }
@@ -243,7 +283,9 @@ function CardTile({ account, hidden }: { account: Account; hidden: boolean }) {
       )}
       {account.statementDay && account.dueDay && (
         <span className="tiny muted">
-          Bills {ordinal(account.statementDay)} · due {ordinal(account.dueDay)}
+          Bills {ordinal(account.statementDay)} · due {fullDate(
+            creditCardBillDates(account.statementDay, account.dueDay).dueDate,
+          )}
         </span>
       )}
     </div>

@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { prefs, serverConfig } from "../../sync/config";
 import { syncInbox, testConnection } from "../../sync/sync";
+import { disablePush, enablePush, pushPrefs, pushSupport, sendTestPush } from "../../sync/push";
 import { db } from "../../db/db";
-import { seedDefaultAccounts } from "../../db/seed";
+import { seedDefaultAccounts, seedDefaultBills } from "../../db/seed";
+import { ImportPDFSheet } from "./ImportPDF";
 import type { AuditEvent } from "../../db/db";
+import type { ScheduleOptions } from "../../domain/reminderSchedule";
 
 export function SettingsScreen({
   hidden, onToggleHidden, onToast, onDataChanged,
@@ -20,6 +23,12 @@ export function SettingsScreen({
   const [syncing, setSyncing] = useState(false);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [theme, setTheme] = useState(prefs.theme);
+  const [importing, setImporting] = useState(false);
+  const [pushOn, setPushOn] = useState(pushPrefs.enabled);
+  const [pushOptions, setPushOptions] = useState<ScheduleOptions>(pushPrefs.options);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushDetail, setPushDetail] = useState<string | null>(null);
+  const support = pushSupport();
 
   const loadAudit = async () => {
     const rows = await db.audit.orderBy("timestamp").reverse().limit(30).toArray();
@@ -54,6 +63,30 @@ export function SettingsScreen({
         ? "Nothing new in the inbox"
         : `${r.saved} saved · ${r.duplicates} duplicate · ${r.unparseable} unparsed`,
     );
+  }
+
+  async function togglePush(next: boolean) {
+    setPushBusy(true);
+    setPushDetail(null);
+    if (!next) {
+      await disablePush();
+      setPushOn(false);
+      setPushDetail("Notifications turned off.");
+    } else {
+      const result = await enablePush();
+      setPushOn(result.ok);
+      setPushDetail(result.detail);
+    }
+    setPushBusy(false);
+    // The schedule is rebuilt and re-uploaded next time the app opens.
+    await onDataChanged();
+  }
+
+  function setOption(key: keyof ScheduleOptions, value: boolean) {
+    const next = { ...pushOptions, [key]: value };
+    pushPrefs.options = next;
+    setPushOptions(next);
+    void onDataChanged();
   }
 
   return (
@@ -100,6 +133,82 @@ export function SettingsScreen({
         </button>
         <p className="tiny muted" style={{ margin: 0 }}>
           Runs automatically when you open the app. Pull here to check immediately.
+        </p>
+      </section>
+
+      {/* ── Notifications ──────────────────────────────────────────── */}
+      <section className="card col" style={{ gap: "var(--sp-md)" }}>
+        <span className="section-label">Notifications</span>
+        <p className="tiny muted" style={{ margin: 0 }}>
+          A web app can't schedule its own reminders on iOS, so they're sent from your Worker.
+          The app works out what's due and uploads only the reminder text — your transactions
+          stay on this device.
+        </p>
+
+        {!support.supported ? (
+          <span className="small" style={{ color: "var(--warning-amber)" }}>{support.reason}</span>
+        ) : (
+          <>
+            <label className="spread" style={{ cursor: "pointer" }}>
+              <span className="small">Send me reminders</span>
+              <input
+                type="checkbox"
+                checked={pushOn}
+                disabled={pushBusy}
+                onChange={(e) => void togglePush(e.target.checked)}
+                style={{ width: 20, height: 20, accentColor: "var(--brand-primary)" }}
+              />
+            </label>
+
+            {pushOn && (
+              <>
+                <div className="divider" />
+                <Check
+                  label="Bill reminders"
+                  hint="Starts after salary lands, gets more frequent as the due date nears, stops once every bill is marked paid"
+                  checked={pushOptions.bills}
+                  onChange={(v) => setOption("bills", v)}
+                />
+                <Check
+                  label="Statement ready"
+                  hint="On each card's bill-generation date, to import the PDF"
+                  checked={pushOptions.statements}
+                  onChange={(v) => setOption("statements", v)}
+                />
+                <Check
+                  label="Daily money tip"
+                  hint="One short note a day, the same one the dashboard shows"
+                  checked={pushOptions.tips}
+                  onChange={(v) => setOption("tips", v)}
+                />
+                <button
+                  className="btn btn-secondary btn-block"
+                  disabled={pushBusy}
+                  onClick={async () => {
+                    setPushBusy(true);
+                    const r = await sendTestPush();
+                    setPushDetail(r.detail);
+                    setPushBusy(false);
+                  }}
+                >
+                  Send a test notification
+                </button>
+              </>
+            )}
+          </>
+        )}
+        {pushDetail && <p className="tiny muted" style={{ margin: 0 }}>{pushDetail}</p>}
+      </section>
+
+      {/* ── Statement import ───────────────────────────────────────── */}
+      <section className="card col" style={{ gap: "var(--sp-md)" }}>
+        <span className="section-label">Statements</span>
+        <button className="btn btn-block" onClick={() => setImporting(true)}>
+          Import a statement PDF
+        </button>
+        <p className="tiny muted" style={{ margin: 0 }}>
+          Reads the PDF in your browser and shows what it found before saving anything.
+          Rows you've already imported are skipped, so re-importing a statement is safe.
         </p>
       </section>
 
@@ -199,6 +308,16 @@ export function SettingsScreen({
         >
           Restore default accounts
         </button>
+        <button
+          className="btn btn-secondary btn-block"
+          onClick={async () => {
+            const n = await seedDefaultBills();
+            await onDataChanged();
+            onToast(n > 0 ? `Added ${n} bill${n === 1 ? "" : "s"}` : "Bills already set up");
+          }}
+        >
+          Restore default bills
+        </button>
         <button className="btn btn-secondary btn-block" onClick={() => void exportBackup()}>
           Export backup (JSON)
         </button>
@@ -222,7 +341,39 @@ export function SettingsScreen({
           but a backup still protects you from a cleared cache or a lost phone.
         </p>
       </section>
+
+      {importing && (
+        <ImportPDFSheet
+          hidden={hidden}
+          onClose={() => setImporting(false)}
+          onDone={async (message) => {
+            setImporting(false);
+            await loadAudit();
+            await onDataChanged();
+            onToast(message);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function Check({
+  label, hint, checked, onChange,
+}: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="spread" style={{ cursor: "pointer" }}>
+      <span className="col" style={{ gap: 2 }}>
+        <span className="small">{label}</span>
+        {hint && <span className="tiny muted">{hint}</span>}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 20, height: 20, accentColor: "var(--brand-primary)", flexShrink: 0 }}
+      />
+    </label>
   );
 }
 
