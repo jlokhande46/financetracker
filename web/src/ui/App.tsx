@@ -76,13 +76,17 @@ export default function App() {
     <>
       <main key={`${tab}-${dataVersion}`}>
         {tab === "home" && (
-          <DashboardScreen hidden={hidden} onGoToTransactions={() => setTab("transactions")} />
+          <DashboardScreen
+            hidden={hidden}
+            onGoToTransactions={() => setTab("transactions")}
+            onToast={showToast}
+          />
         )}
         {tab === "transactions" && (
           <TransactionsScreen hidden={hidden} onToast={showToast} />
         )}
         {tab === "plan" && <PlanScreen hidden={hidden} onToast={showToast} />}
-        {tab === "analytics" && <AnalyticsScreen hidden={hidden} />}
+        {tab === "analytics" && <AnalyticsScreen hidden={hidden} onToast={showToast} />}
         {tab === "settings" && (
           <SettingsScreen
             hidden={hidden}

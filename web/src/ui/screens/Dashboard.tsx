@@ -5,16 +5,22 @@ import { creditCardBillDates } from "../../domain/billMatching";
 import { dueDescription, STATE_META } from "../../domain/bills";
 import { tipOfTheDay } from "../../domain/tips";
 import { Bar, CategoryDot, EmptyState } from "../components";
+import { AccountSheet } from "./AccountSheet";
 import { fullDate, money, moneyCompact, monthYear, percent } from "../format";
 import { useAccounts, useAllTransactions, usePendingReview } from "../../state/useStore";
 import { usePlan } from "../../state/usePlan";
 import type { Account } from "../../domain/types";
 
 export function DashboardScreen({
-  hidden, onGoToTransactions,
-}: { hidden: boolean; onGoToTransactions: () => void }) {
+  hidden, onGoToTransactions, onToast,
+}: {
+  hidden: boolean;
+  onGoToTransactions: () => void;
+  onToast: (m: string) => void;
+}) {
   const { all, loading } = useAllTransactions();
-  const { accounts } = useAccounts();
+  const { accounts, reload: reloadAccounts } = useAccounts();
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const { pending } = usePendingReview();
   const plan = usePlan(all);
   const [month, setMonth] = useState(() => startOfMonth(Date.now()));
@@ -136,7 +142,14 @@ export function DashboardScreen({
             <section className="col" style={{ gap: "var(--sp-sm)" }}>
               <span className="section-label">My cards</span>
               <div className="hscroll">
-                {creditCards.map((a) => <CardTile key={a.id} account={a} hidden={hidden} />)}
+                {creditCards.map((a) => (
+                  <CardTile
+                    key={a.id}
+                    account={a}
+                    hidden={hidden}
+                    onEdit={() => setEditingAccount(a)}
+                  />
+                ))}
               </div>
             </section>
           )}
@@ -146,13 +159,18 @@ export function DashboardScreen({
               <span className="section-label">Accounts</span>
               <div className="hscroll">
                 {deposits.map((a) => (
-                  <div key={a.id} className="card col" style={{ gap: 4, minWidth: 150 }}>
+                  <button
+                    key={a.id}
+                    className="card col"
+                    style={{ gap: 4, minWidth: 150, textAlign: "left" }}
+                    onClick={() => setEditingAccount(a)}
+                  >
                     <span className="tiny muted">{a.bankName}</span>
                     <span className="small truncate" style={{ fontWeight: 600 }}>{a.name}</span>
                     <span className="amount" style={{ fontSize: 17, fontWeight: 700 }}>
                       {money(a.balance, hidden)}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </section>
@@ -186,6 +204,19 @@ export function DashboardScreen({
         <span className="section-label">Money tip</span>
         <p className="small" style={{ margin: 0, lineHeight: 1.5 }}>{tip.text}</p>
       </section>
+
+      {editingAccount && (
+        <AccountSheet
+          account={editingAccount}
+          hidden={hidden}
+          onClose={() => setEditingAccount(null)}
+          onDone={async (message) => {
+            setEditingAccount(null);
+            await reloadAccounts();
+            onToast(message);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -251,16 +282,19 @@ function Stat({
   );
 }
 
-function CardTile({ account, hidden }: { account: Account; hidden: boolean }) {
+function CardTile({
+  account, hidden, onEdit,
+}: { account: Account; hidden: boolean; onEdit: () => void }) {
   const utilisation = account.creditLimit && account.creditLimit > 0
     ? Math.min(1, account.balance / account.creditLimit)
     : null;
 
   return (
-    <div
+    <button
       className="card col"
+      onClick={onEdit}
       style={{
-        gap: 6, minWidth: 210,
+        gap: 6, minWidth: 210, textAlign: "left",
         background: `linear-gradient(135deg, ${account.colorHex}38, var(--bg-card))`,
         border: `1px solid ${account.colorHex}4D`,
       }}
@@ -288,7 +322,7 @@ function CardTile({ account, hidden }: { account: Account; hidden: boolean }) {
           )}
         </span>
       )}
-    </div>
+    </button>
   );
 }
 

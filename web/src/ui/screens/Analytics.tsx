@@ -6,11 +6,16 @@ import { INTENT_META, type CategoryIntent } from "../../domain/types";
 import { findCategory } from "../../domain/categories";
 import { Bar, EmptyState } from "../components";
 import { money, moneyCompact, monthYear, percent } from "../format";
-import { useAllTransactions } from "../../state/useStore";
+import { useAccounts, useAllTransactions } from "../../state/useStore";
+import { NetWorthSection } from "./NetWorth";
 
-export function AnalyticsScreen({ hidden }: { hidden: boolean }) {
+export function AnalyticsScreen({
+  hidden, onToast,
+}: { hidden: boolean; onToast: (m: string) => void }) {
   const { all, loading } = useAllTransactions();
+  const { accounts } = useAccounts();
   const [month, setMonth] = useState(() => startOfMonth(Date.now()));
+  const [view, setView] = useState<"spending" | "wealth">("spending");
 
   const monthTxns = useMemo(
     () => all.filter((t) => inMonth(t.date, month)),
@@ -40,6 +45,31 @@ export function AnalyticsScreen({ hidden }: { hidden: boolean }) {
 
   return (
     <div className="screen col" style={{ gap: "var(--sp-lg)" }}>
+      <div className="row" style={{ gap: "var(--sp-sm)" }}>
+        {(["spending", "wealth"] as const).map((v) => (
+          <button
+            key={v}
+            className="chip grow"
+            data-selected={view === v}
+            style={{ textAlign: "center", justifyContent: "center" }}
+            onClick={() => setView(v)}
+          >
+            {v === "spending" ? "Spending" : "Net worth"}
+          </button>
+        ))}
+      </div>
+
+      {view === "wealth" ? (
+        <NetWorthSection accounts={accounts} hidden={hidden} onToast={onToast} />
+      ) : (
+        <SpendingView />
+      )}
+    </div>
+  );
+
+  function SpendingView() {
+    return (
+      <>
       <div className="spread">
         <button className="chip" onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month">‹</button>
         <div className="col" style={{ alignItems: "center", gap: 0 }}>
@@ -169,8 +199,9 @@ export function AnalyticsScreen({ hidden }: { hidden: boolean }) {
           </section>
         </>
       )}
-    </div>
-  );
+      </>
+    );
+  }
 }
 
 /** Wants over target is a warning; needs/savings over target is fine. */

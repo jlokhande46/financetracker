@@ -3,6 +3,7 @@ import type { Account, Transaction } from "../domain/types";
 import type { BillPayment, RecurringBill } from "../domain/bills";
 import type { Budget } from "../domain/budgets";
 import type { Goal } from "../domain/goals";
+import type { InvestmentHolding, NetWorthPoint } from "../domain/investments";
 
 /** A merchant rule the user taught the app during review. */
 export interface MerchantRule {
@@ -45,6 +46,8 @@ class FinanceDB extends Dexie {
   billPayments!: Table<BillPayment, string>;
   budgets!: Table<Budget, string>;
   goals!: Table<Goal, string>;
+  investments!: Table<InvestmentHolding, string>;
+  netWorthHistory!: Table<NetWorthPoint, string>;
 
   constructor() {
     super("financetracker");
@@ -64,6 +67,13 @@ class FinanceDB extends Dexie {
       billPayments: "id, billId, periodKey, transactionId",
       budgets: "id, categorySlug",
       goals: "id",
+    });
+    // v3 adds net worth. History is a table rather than a JSON blob in
+    // localStorage (where the Swift build kept it) so it survives a cleared
+    // cache alongside everything else, and lands in the backup export.
+    this.version(3).stores({
+      investments: "id, type",
+      netWorthHistory: "month",
     });
   }
 }

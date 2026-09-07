@@ -4,9 +4,12 @@ Web port of the iOS app. Exists because free Apple provisioning re-signs every
 7 days, which kept breaking tracking continuity. An installed PWA never expires.
 
 **Status: feature-complete against the iOS app.** Dashboard, transactions feed
-with review, PDF statement import, recurring bills, budgets, goals, analytics
-(50/30/20), and Web Push reminders are all in. The Swift app in
-`../FinanceTracker` still runs and is unaffected by anything here.
+with review, PDF statement import, recurring bills, budgets, goals, net worth
+with manually-tracked holdings, analytics (50/30/20), and Web Push reminders are
+all in. The Swift app in `../FinanceTracker` still runs and is unaffected by
+anything here.
+
+The one thing not carried over is the Face ID lock — see the end of this file.
 
 ## Why a backend at all
 
@@ -171,8 +174,39 @@ cadence then ramps from one a day, to two, to three once overdue.
 `new Date(2026, 1, 31)` is 3 March; a bill due on the 31st has to land on 28
 February. The Swift build had to learn the same lesson.
 
+## Net worth
+
+Assets (cash + holdings) minus card outstanding, with a monthly trend.
+
+Holdings are entered by hand and there is **no live NAV fetch**, on purpose:
+every Indian quote API wants a key, most rate-limit, and a portfolio that
+silently stops updating is worse than one you knowingly refresh. So the UI
+leans on saying how stale each figure is instead of pretending it's live, and
+flags anything older than 45 days.
+
+Two smaller judgements worth knowing about:
+
+- A holding with no cost basis still counts towards net worth; it just shows no
+  return. Gold bought at a price nobody remembers is still worth something. The
+  card then says what share of the portfolio the stated gain actually speaks
+  for, rather than implying it covers everything.
+- History keeps one point per month — the latest — not one per app launch.
+  Paying a card and then being paid inside a single month would otherwise turn
+  the trend into a sawtooth.
+
+Balances are *derived*: opening balance combined with that account's
+transactions. Tap any account or card on the dashboard to set its opening
+balance, which is what the iOS build never let you do — its net worth read off
+seeded sample numbers that never updated.
+
 ## Not carried over
 
-- **Face ID lock** → will be a PIN or WebAuthn; noticeably clunkier than `LAContext`.
+- **Face ID lock.** The web equivalent is WebAuthn with a platform
+  authenticator, which does reach Face ID on iOS — but it guards a screen, not
+  the data, since IndexedDB stays readable to anything with the device unlocked.
+  `LAContext` had the same property; it's just less obvious here. Hide amounts
+  covers the shoulder-surf case in the meantime.
 - **Local-only privacy.** SMS text now transits your Worker. It's your own
-  Cloudflare account rather than a third party, but it is no longer on-device only.
+  Cloudflare account rather than a third party, but it is no longer on-device
+  only. Reminder text does too — though not your transactions, which never
+  leave the browser.

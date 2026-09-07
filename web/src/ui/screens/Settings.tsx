@@ -396,17 +396,32 @@ function auditColor(kind: AuditEvent["kind"]): string {
   }
 }
 
-/** Full snapshot — the thing the iOS app's "Export My Data" button only pretended to do. */
+/**
+ * Full snapshot — the thing the iOS app's "Export My Data" button only
+ * pretended to do. Everything the user typed in by hand is in here: manual
+ * transactions, bills and their payment history, budgets, goals, and holdings
+ * whose values exist nowhere else.
+ */
 async function exportBackup(): Promise<void> {
-  const [transactions, accounts, merchantRules] = await Promise.all([
+  const [
+    transactions, accounts, merchantRules,
+    bills, billPayments, budgets, goals, investments, netWorthHistory,
+  ] = await Promise.all([
     db.transactions.toArray(),
     db.accounts.toArray(),
     db.merchantRules.toArray(),
+    db.bills.toArray(),
+    db.billPayments.toArray(),
+    db.budgets.toArray(),
+    db.goals.toArray(),
+    db.investments.toArray(),
+    db.netWorthHistory.toArray(),
   ]);
   const payload = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     transactions, accounts, merchantRules,
+    bills, billPayments, budgets, goals, investments, netWorthHistory,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
@@ -418,15 +433,27 @@ async function exportBackup(): Promise<void> {
 
 async function importBackup(file: File): Promise<number> {
   const text = await file.text();
-  const data = JSON.parse(text) as {
-    transactions?: unknown[];
-    accounts?: unknown[];
-    merchantRules?: unknown[];
-  };
+  const data = JSON.parse(text) as Record<string, unknown[] | undefined>;
+
   // bulkPut is an upsert keyed by id, so re-importing the same backup is
-  // idempotent rather than duplicating everything.
-  if (data.accounts?.length) await db.accounts.bulkPut(data.accounts as never);
-  if (data.merchantRules?.length) await db.merchantRules.bulkPut(data.merchantRules as never);
-  if (data.transactions?.length) await db.transactions.bulkPut(data.transactions as never);
+  // idempotent rather than duplicating everything. A v1 backup simply has
+  // fewer keys — each restores what it has.
+  const restore: Array<[keyof typeof db, string]> = [
+    ["accounts", "accounts"],
+    ["merchantRules", "merchantRules"],
+    ["transactions", "transactions"],
+    ["bills", "bills"],
+    ["billPayments", "billPayments"],
+    ["budgets", "budgets"],
+    ["goals", "goals"],
+    ["investments", "investments"],
+    ["netWorthHistory", "netWorthHistory"],
+  ];
+  for (const [table, key] of restore) {
+    const rows = data[key];
+    if (rows?.length) {
+      await (db[table] as unknown as { bulkPut(r: unknown[]): Promise<unknown> }).bulkPut(rows);
+    }
+  }
   return data.transactions?.length ?? 0;
 }
