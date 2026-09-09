@@ -103,14 +103,49 @@ Two of those suites are worth calling out:
 ## Local dev
 
 ```bash
+cd web
 npm install
-npm run dev          # PWA
+npm run dev          # http://localhost:5173
 npm run typecheck    # app, service worker and Worker — three separate programs
+npm test
 ```
+
+`npm run dev` is enough to use the app: it stores everything in the browser's
+IndexedDB, so it works with no backend at all. The Worker is only needed for
+SMS capture and push notifications.
 
 Three tsconfigs, not one: a `/// <reference lib="webworker" />` applies to the
 whole compilation, so mixing the service worker in with the app turned `window`
 into `never` for every client file.
+
+## Hosting the app
+
+Any static host works — the build is plain files. Two things it must have:
+**HTTPS** (no service worker, no PWA install, no push without it) and, on iOS,
+the ability to be added to the Home Screen, which is what unlocks Web Push and
+lifts Safari's 7-day storage cap.
+
+`BASE_PATH` controls where the app expects to live. It defaults to `/`; set it
+when serving from a subpath, and the assets, manifest `start_url`/`scope` and
+service-worker scope all follow:
+
+```bash
+npm run build                              # served at /
+BASE_PATH=/financetracker/ npm run build   # served at /financetracker/
+```
+
+**Cloudflare Pages** is the path of least resistance here, since the Worker is
+already on Cloudflare: connect the repo, set the build directory to `web`, the
+command to `npm run build`, the output to `dist`. Free for private repos, serves
+at the root so `BASE_PATH` stays default.
+
+**GitHub Pages** works too — `.github/workflows/pages.yml` builds and publishes
+on every push to `main` that touches `web/`, setting `BASE_PATH` to the repo
+name automatically. Enable it once under Settings → Pages → Source: **GitHub
+Actions**. Note that Pages on a *private* repo needs a paid GitHub plan; on the
+free plan the repo has to be public, which publishes the source (including the
+seeded card last-4s in `db/seed.ts`) but never any of your data — that only ever
+exists in your own browser.
 
 ## Deploying the backend
 

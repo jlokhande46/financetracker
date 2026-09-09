@@ -2,7 +2,19 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+/**
+ * Where the app will be served from.
+ *
+ * Root by default (Cloudflare Pages, Netlify, a custom domain). GitHub Pages
+ * project sites live at `/<repo>/` instead, and every absolute path in the
+ * build — assets, the manifest, the service worker's scope — has to agree with
+ * that or the app 404s on load. Set BASE_PATH=/financetracker/ for those.
+ */
+const base = process.env.BASE_PATH ?? "/";
+const at = (path: string) => `${base}${path.replace(/^\//, "")}`;
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     VitePWA({
@@ -27,12 +39,14 @@ export default defineConfig({
         orientation: "portrait",
         background_color: "#0A0A0F",
         theme_color: "#7B6EF6",
-        start_url: "/",
-        scope: "/",
+        start_url: base,
+        // Scope has to cover the served path, or iOS refuses to install the
+        // PWA — and without an install there's no Web Push on iOS at all.
+        scope: base,
         icons: [
-          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: at("icons/icon-192.png"), sizes: "192x192", type: "image/png" },
+          { src: at("icons/icon-512.png"), sizes: "512x512", type: "image/png" },
+          { src: at("icons/icon-512.png"), sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
     }),

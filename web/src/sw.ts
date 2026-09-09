@@ -29,6 +29,14 @@ interface PushPayload {
   url?: string;
 }
 
+/**
+ * Where the app is served from — "/" or "/financetracker/" on a GitHub Pages
+ * project site. The worker sits at the root of its own scope, so deriving this
+ * from its own URL keeps icons and click targets correct without the build
+ * having to inject a constant.
+ */
+const BASE = new URL("./", self.location.href).pathname;
+
 self.addEventListener("push", (event: PushEvent) => {
   let payload: PushPayload = { title: "FinanceTracker", body: "You have a reminder." };
   try {
@@ -47,16 +55,16 @@ self.addEventListener("push", (event: PushEvent) => {
       // should be one lock-screen row, not three.
       tag: payload.tag ?? "financetracker",
       renotify: true,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      data: { url: payload.url ?? "/" },
+      icon: `${BASE}icons/icon-192.png`,
+      badge: `${BASE}icons/icon-192.png`,
+      data: { url: payload.url ?? BASE },
     } as NotificationOptions),
   );
 });
 
 self.addEventListener("notificationclick", (event: NotificationEvent) => {
   event.notification.close();
-  const target = (event.notification.data as { url?: string } | undefined)?.url ?? "/";
+  const target = (event.notification.data as { url?: string } | undefined)?.url ?? BASE;
 
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

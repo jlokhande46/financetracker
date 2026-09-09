@@ -29,6 +29,13 @@ const SLOT_HOURS = [9, 14, 19];
 /** How far ahead to schedule. The client re-uploads whenever it opens. */
 const HORIZON_DAYS = 14;
 
+/**
+ * Where tapping a notification should land. Not hardcoded to "/" because a
+ * GitHub Pages project site serves the app from "/<repo>/", and a push that
+ * opens the wrong path is a push that opens a 404.
+ */
+const APP_URL = import.meta.env?.BASE_URL ?? "/";
+
 const DAY = 86_400_000;
 
 const dayStart = (ms: number) => {
@@ -84,7 +91,7 @@ export function billReminders(
           // Same tag across the whole bill, so three nudges don't stack into
           // three lock-screen rows.
           tag: `bill-${status.bill.id}`,
-          url: "/",
+          url: APP_URL,
         });
       }
     }
@@ -127,7 +134,7 @@ export function statementReminders(
         title: `${account.name} statement is out`,
         body: "Import the PDF to bring in anything the SMS alerts missed.",
         tag: `stmt-${account.id}`,
-        url: "/",
+        url: APP_URL,
       });
     }
   }
@@ -149,7 +156,7 @@ export function tipReminders(now: number = Date.now()): ScheduledReminder[] {
       title: "Money tip",
       body: tipOfTheDay(day).text,
       tag: "tip",
-      url: "/",
+      url: APP_URL,
     });
   }
   return out;
