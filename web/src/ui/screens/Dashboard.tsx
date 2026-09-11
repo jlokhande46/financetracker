@@ -5,6 +5,8 @@ import { findCategory } from "../../domain/categories";
 import { creditCardBillDates } from "../../domain/billMatching";
 import { dueDescription, STATE_META } from "../../domain/bills";
 import { tipOfTheDay } from "../../domain/tips";
+import { generateInsights } from "../../domain/insights";
+import { CADENCE_LABEL, detectSubscriptions, totalAnnualCost } from "../../domain/subscriptions";
 import { Bar, CategoryDot, EmptyState } from "../components";
 import { AccountSheet } from "./AccountSheet";
 import { fullDate, money, moneyCompact, monthYear, percent } from "../format";
@@ -33,6 +35,15 @@ export function DashboardScreen({
     [all, month],
   );
   const isCurrentMonth = month === startOfMonth(Date.now());
+
+  const subscriptions = useMemo(() => detectSubscriptions(all), [all]);
+  const insights = useMemo(
+    () => generateInsights({ all, budgets: plan.budgets, goals: plan.goals, month })
+      // The recurring-charges section is right below and says it better, so
+      // that insight would just be the same sentence twice.
+      .filter((i) => !(i.kind === "subscriptions" && subscriptions.length > 0)),
+    [all, plan.budgets, plan.goals, month, subscriptions.length],
+  );
 
   const creditCards = accounts.filter((a) => a.isActive && a.type === "credit");
   const deposits = accounts.filter((a) => a.isActive && a.type !== "credit");
@@ -95,6 +106,25 @@ export function DashboardScreen({
               </span>
               <span className="muted">›</span>
             </button>
+          )}
+
+          {/* Rules over the user's own numbers. Each one has a threshold it has
+              to clear, and only the top few show — a card that always says
+              something becomes wallpaper. */}
+          {insights.length > 0 && (
+            <section className="col" style={{ gap: "var(--sp-sm)" }}>
+              <span className="section-label">Worth knowing</span>
+              {insights.map((i) => (
+                <div
+                  key={i.kind}
+                  className="card col"
+                  style={{ gap: 4, borderLeft: `3px solid ${i.color}` }}
+                >
+                  <span className="small" style={{ fontWeight: 600 }}>{i.headline}</span>
+                  <span className="tiny muted" style={{ lineHeight: 1.5 }}>{i.detail}</span>
+                </div>
+              ))}
+            </section>
           )}
 
           {/* The 50/30/20 split belongs on the home screen, not only behind a
@@ -224,6 +254,42 @@ export function DashboardScreen({
                   </button>
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* Detected by cadence, not a merchant blocklist — a hardcoded list
+              would miss the local gym that actually matters. */}
+          {subscriptions.length > 0 && (
+            <section className="card col" style={{ gap: "var(--sp-md)" }}>
+              <div className="spread">
+                <span className="section-label">Recurring charges</span>
+                <span className="tiny muted">
+                  ~{moneyCompact(totalAnnualCost(subscriptions), hidden)}/yr
+                </span>
+              </div>
+              {subscriptions.slice(0, 6).map((s) => (
+                <div key={s.merchantName} className="spread">
+                  <span className="row" style={{ gap: "var(--sp-sm)", minWidth: 0 }}>
+                    <CategoryDot slug={s.categorySlug} size={28} />
+                    <span className="col" style={{ gap: 0, minWidth: 0 }}>
+                      <span className="small truncate">{s.merchantName}</span>
+                      <span className="tiny muted">
+                        {CADENCE_LABEL[s.cadence]} · next {fullDate(s.nextExpected)}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="col" style={{ alignItems: "flex-end", gap: 0 }}>
+                    <span className="small amount" style={{ fontWeight: 600 }}>
+                      {money(s.typicalAmount, hidden)}
+                    </span>
+                    <span className="tiny muted">{moneyCompact(s.annualCost, hidden)}/yr</span>
+                  </span>
+                </div>
+              ))}
+              <span className="tiny muted">
+                Found by looking for charges at a steady interval and amount. Review these
+                quarterly — the ones that hurt are the small monthly charges you stopped noticing.
+              </span>
             </section>
           )}
 
