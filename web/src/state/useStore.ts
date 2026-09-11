@@ -125,6 +125,26 @@ export function useTransactionFeed() {
   };
 }
 
+/** Every tag ever used, for the review flow's autocomplete. */
+export function useKnownTags(): string[] {
+  const [tags, setTags] = useState<string[]>([]);
+  useEffect(() => {
+    void db.transactions.toArray().then((rows) => {
+      const set = new Set<string>();
+      for (const t of rows) for (const tag of t.tags) set.add(tag);
+      setTags([...set].sort());
+    });
+  }, []);
+  return tags;
+}
+
+/** Skip a transaction without categorising it — confirmed, but left as-is. */
+export async function skipReview(transaction: Transaction): Promise<void> {
+  // Confirming without changing the category is a real answer: "the guess was
+  // fine". Leaving it pending forever would make the review queue meaningless.
+  await db.transactions.put({ ...transaction, isConfirmed: true });
+}
+
 /** Everything needing review — confidence below the 0.85 bar. */
 export function usePendingReview() {
   const [pending, setPending] = useState<Transaction[]>([]);
@@ -188,6 +208,7 @@ export async function confirmReview(opts: {
   rememberName: boolean;
   rememberCategory: boolean;
   applyToPast: boolean;
+  newTags?: string[];
 }): Promise<number> {
   const { transaction, newName, newSlug, rememberName, rememberCategory, applyToPast } = opts;
 
@@ -195,6 +216,7 @@ export async function confirmReview(opts: {
     ...transaction,
     merchantName: newName.trim() || transaction.merchantName,
     categorySlug: newSlug,
+    tags: opts.newTags ?? transaction.tags,
     isConfirmed: true,
     confidence: 1,
   });

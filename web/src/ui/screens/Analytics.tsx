@@ -62,14 +62,7 @@ export function AnalyticsScreen({
       {view === "wealth" ? (
         <NetWorthSection accounts={accounts} hidden={hidden} onToast={onToast} />
       ) : (
-        <SpendingView />
-      )}
-    </div>
-  );
-
-  function SpendingView() {
-    return (
-      <>
+        <>
       <div className="spread">
         <button className="chip" onClick={() => setMonth(addMonths(month, -1))} aria-label="Previous month">‹</button>
         <div className="col" style={{ alignItems: "center", gap: 0 }}>
@@ -199,9 +192,10 @@ export function AnalyticsScreen({
           </section>
         </>
       )}
-      </>
-    );
-  }
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Wants over target is a warning; needs/savings over target is fine. */

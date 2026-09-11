@@ -5,6 +5,7 @@ import { disablePush, enablePush, pushPrefs, pushSupport, sendTestPush } from ".
 import { db } from "../../db/db";
 import { seedDefaultAccounts, seedDefaultBills } from "../../db/seed";
 import { ImportPDFSheet } from "./ImportPDF";
+import { PasteSMSSheet } from "./PasteSMS";
 import type { AuditEvent } from "../../db/db";
 import type { ScheduleOptions } from "../../domain/reminderSchedule";
 
@@ -24,6 +25,8 @@ export function SettingsScreen({
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [theme, setTheme] = useState(prefs.theme);
   const [importing, setImporting] = useState(false);
+  const [pasting, setPasting] = useState(false);
+  const [storage, setStorage] = useState<{ rows: number; usedMB: string; persisted: boolean } | null>(null);
   const [pushOn, setPushOn] = useState(pushPrefs.enabled);
   const [pushOptions, setPushOptions] = useState<ScheduleOptions>(pushPrefs.options);
   const [pushBusy, setPushBusy] = useState(false);
@@ -35,6 +38,33 @@ export function SettingsScreen({
     setAudit(rows);
   };
   useEffect(() => { void loadAudit(); }, []);
+
+  // "Where is my data?" deserves an answer in the app, not just in a README.
+  useEffect(() => {
+    void (async () => {
+      const [rows, estimate] = await Promise.all([
+        db.transactions.count(),
+        navigator.storage?.estimate?.() ?? Promise.resolve(undefined),
+      ]);
+      // Persistent storage means the browser won't evict the database under
+      // pressure. Worth showing, because the unpersisted case is exactly how
+      // someone loses a year of tracking without warning.
+      const persisted = (await navigator.storage?.persisted?.()) ?? false;
+      setStorage({
+        rows,
+        usedMB: estimate?.usage ? (estimate.usage / 1_048_576).toFixed(1) : "—",
+        persisted,
+      });
+    })();
+  }, []);
+
+  async function requestPersistence() {
+    const granted = (await navigator.storage?.persist?.()) ?? false;
+    setStorage((s) => (s ? { ...s, persisted: granted } : s));
+    onToast(granted
+      ? "Storage is now protected from automatic cleanup"
+      : "The browser declined — installing the app to your Home Screen usually grants it");
+  }
 
   function saveServer() {
     serverConfig.url = url;
@@ -200,9 +230,9 @@ export function SettingsScreen({
         {pushDetail && <p className="tiny muted" style={{ margin: 0 }}>{pushDetail}</p>}
       </section>
 
-      {/* ── Statement import ───────────────────────────────────────── */}
+      {/* ── Adding transactions ────────────────────────────────────── */}
       <section className="card col" style={{ gap: "var(--sp-md)" }}>
-        <span className="section-label">Statements</span>
+        <span className="section-label">Add transactions</span>
         <button className="btn btn-block" onClick={() => setImporting(true)}>
           Import a statement PDF
         </button>
@@ -210,6 +240,53 @@ export function SettingsScreen({
           Reads the PDF in your browser and shows what it found before saving anything.
           Rows you've already imported are skipped, so re-importing a statement is safe.
         </p>
+        <button className="btn btn-secondary btn-block" onClick={() => setPasting(true)}>
+          Paste a bank SMS
+        </button>
+        <p className="tiny muted" style={{ margin: 0 }}>
+          For messages the automation missed — or to use SMS capture before the Worker is
+          set up at all. Paste several at once with a blank line between them.
+        </p>
+      </section>
+
+      {/* ── Where the data lives ───────────────────────────────────── */}
+      <section className="card col" style={{ gap: "var(--sp-md)" }}>
+        <span className="section-label">Your data</span>
+        <p className="tiny muted" style={{ margin: 0 }}>
+          Everything is stored in this browser, in IndexedDB — a database on your device.
+          It is never uploaded. That also means it is per-browser and per-device: this app
+          on your phone and on your laptop are two separate sets of data, and clearing site
+          data erases it.
+        </p>
+        {storage && (
+          <>
+            <div className="spread">
+              <span className="small muted">Transactions stored</span>
+              <span className="small amount">{storage.rows}</span>
+            </div>
+            <div className="spread">
+              <span className="small muted">Space used</span>
+              <span className="small amount">{storage.usedMB} MB</span>
+            </div>
+            <div className="spread">
+              <span className="small muted">Protected from cleanup</span>
+              <span className="small" style={{ color: storage.persisted ? "var(--income-green)" : "var(--warning-amber)" }}>
+                {storage.persisted ? "Yes" : "No"}
+              </span>
+            </div>
+            {!storage.persisted && (
+              <>
+                <button className="btn btn-secondary btn-block" onClick={() => void requestPersistence()}>
+                  Protect my data
+                </button>
+                <p className="tiny muted" style={{ margin: 0 }}>
+                  Without this, a browser short on space may delete the database without
+                  asking. Adding the app to your Home Screen usually grants it automatically.
+                </p>
+              </>
+            )}
+          </>
+        )}
       </section>
 
       {/* ── Shortcut setup ─────────────────────────────────────────── */}
@@ -341,6 +418,18 @@ export function SettingsScreen({
           but a backup still protects you from a cleared cache or a lost phone.
         </p>
       </section>
+
+      {pasting && (
+        <PasteSMSSheet
+          hidden={hidden}
+          onClose={() => setPasting(false)}
+          onDone={async (message) => {
+            await loadAudit();
+            await onDataChanged();
+            onToast(message);
+          }}
+        />
+      )}
 
       {importing && (
         <ImportPDFSheet

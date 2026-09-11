@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Bar, EmptyState } from "../components";
 import { money, moneyCompact, fullDate, percent } from "../format";
+import { rupees, type Paise } from "../../domain/types";
 import { findCategory } from "../../domain/categories";
 import { dueDescription, FREQUENCY_LABEL, STATE_META } from "../../domain/bills";
 import { BUDGET_STATE_META, TOTAL_BUDGET_SLUG } from "../../domain/budgets";
 import { GOAL_STATE_META } from "../../domain/goals";
 import { useAllTransactions } from "../../state/useStore";
-import { markBillUnpaid, usePlan } from "../../state/usePlan";
+import { contributeToGoal, markBillUnpaid, usePlan } from "../../state/usePlan";
 import { BillEditSheet, BillPaySheet, BudgetEditSheet, GoalEditSheet } from "./PlanSheets";
 import type { BillStatus, BudgetStatus, GoalStatus } from "../../state/usePlan";
 import type { RecurringBill } from "../../domain/bills";
@@ -77,7 +78,15 @@ export function PlanScreen({
       )}
 
       {section === "goals" && (
-        <GoalsSection plan={plan} hidden={hidden} onEdit={setEditingGoal} />
+        <GoalsSection
+          plan={plan}
+          hidden={hidden}
+          onEdit={setEditingGoal}
+          onContribute={async (id, amount) => {
+            await contributeToGoal(id, amount);
+            await refresh(`Added ${moneyCompact(amount)}`);
+          }}
+        />
       )}
 
       {payingBill && (
@@ -316,11 +325,12 @@ function BudgetCard({
 // ── goals ────────────────────────────────────────────────────────────────────
 
 function GoalsSection({
-  plan, hidden, onEdit,
+  plan, hidden, onEdit, onContribute,
 }: {
   plan: ReturnType<typeof usePlan>;
   hidden: boolean;
   onEdit: (g: Goal | "new") => void;
+  onContribute: (id: string, amount: Paise) => void | Promise<void>;
 }) {
   if (plan.goalList.length === 0) {
     return (
@@ -335,7 +345,13 @@ function GoalsSection({
   return (
     <div className="col" style={{ gap: "var(--sp-sm)" }}>
       {plan.goalList.map((s) => (
-        <GoalCard key={s.goal.id} status={s} hidden={hidden} onEdit={() => onEdit(s.goal)} />
+        <GoalCard
+          key={s.goal.id}
+          status={s}
+          hidden={hidden}
+          onEdit={() => onEdit(s.goal)}
+          onContribute={(amount) => void onContribute(s.goal.id, amount)}
+        />
       ))}
       <button className="btn btn-secondary btn-block" onClick={() => onEdit("new")}>
         Add another goal
@@ -345,17 +361,22 @@ function GoalsSection({
 }
 
 function GoalCard({
-  status, hidden, onEdit,
-}: { status: GoalStatus; hidden: boolean; onEdit: () => void }) {
+  status, hidden, onEdit, onContribute,
+}: {
+  status: GoalStatus;
+  hidden: boolean;
+  onEdit: () => void;
+  onContribute: (amount: Paise) => void;
+}) {
   const { goal, fraction, remaining, monthsLeft, requiredPerMonth, state } = status;
   const meta = GOAL_STATE_META[state];
 
   return (
-    <button className="card col" style={{ gap: "var(--sp-sm)", textAlign: "left" }} onClick={onEdit}>
-      <div className="spread">
+    <section className="card col" style={{ gap: "var(--sp-sm)" }}>
+      <button className="spread" style={{ textAlign: "left", width: "100%" }} onClick={onEdit}>
         <span style={{ fontWeight: 600 }}>{goal.name}</span>
         <span className="tiny" style={{ color: meta.color }}>{meta.label}</span>
-      </div>
+      </button>
 
       <Bar fraction={fraction} color={goal.colorHex} />
 
@@ -372,6 +393,24 @@ function GoalCard({
         </span>
       )}
       {remaining === 0 && <span className="tiny" style={{ color: "var(--income-green)" }}>Fully funded</span>}
-    </button>
+
+      {/* Logging a contribution was previously only possible by editing the
+          saved total by hand — which meant doing the arithmetic yourself. */}
+      {remaining > 0 && (
+        <div className="row" style={{ gap: "var(--sp-sm)", flexWrap: "wrap" }}>
+          {requiredPerMonth !== null && requiredPerMonth > 0 && requiredPerMonth <= remaining && (
+            <button className="chip" data-selected onClick={() => onContribute(requiredPerMonth)}>
+              + {moneyCompact(requiredPerMonth)} this month
+            </button>
+          )}
+          <button className="chip" onClick={() => onContribute(Math.min(rupees(5000), remaining))}>
+            + {moneyCompact(Math.min(rupees(5000), remaining))}
+          </button>
+          <button className="chip" onClick={() => onContribute(remaining)}>
+            + finish it
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

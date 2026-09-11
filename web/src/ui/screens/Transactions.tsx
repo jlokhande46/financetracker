@@ -5,8 +5,9 @@ import {
   DayHeader, EmptyState, Sheet, TransactionRow,
 } from "../components";
 import {
-  confirmReview, deleteTransaction, saveTransaction, useTransactionFeed,
+  confirmReview, deleteTransaction, saveTransaction, usePendingReview, useTransactionFeed,
 } from "../../state/useStore";
+import { QuickReviewSheet } from "./QuickReview";
 import type { Transaction } from "../../domain/types";
 
 const QUICK_FILTERS = ["food", "travel", "shopping", "bills", "entertainment"];
@@ -15,7 +16,9 @@ export function TransactionsScreen({
   hidden, onToast,
 }: { hidden: boolean; onToast: (m: string) => void }) {
   const feed = useTransactionFeed();
+  const { pending, reload: reloadPending } = usePendingReview();
   const [selected, setSelected] = useState<Transaction | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const sentinel = useRef<HTMLDivElement | null>(null);
 
   // Infinite scroll via IntersectionObserver rather than firing on every row's
@@ -35,6 +38,30 @@ export function TransactionsScreen({
   return (
     <div className="screen">
       <h1 className="h1" style={{ margin: "0 0 var(--sp-base)" }}>Transactions</h1>
+
+      {/* The queue has to be reachable from where the transactions are, not
+          only from a dashboard card the user has already scrolled past. */}
+      {pending.length > 0 && (
+        <button
+          className="card spread"
+          onClick={() => setReviewing(true)}
+          style={{
+            marginBottom: "var(--sp-md)", textAlign: "left",
+            background: "rgba(255,181,69,0.08)",
+            border: "1px solid rgba(255,181,69,0.3)",
+          }}
+        >
+          <span className="col" style={{ gap: 2 }}>
+            <span style={{ fontWeight: 600 }}>
+              Review {pending.length} transaction{pending.length === 1 ? "" : "s"}
+            </span>
+            <span className="tiny muted">
+              Sort them one at a time — the app learns each merchant as you go
+            </span>
+          </span>
+          <span className="muted">›</span>
+        </button>
+      )}
 
       <input
         className="field"
@@ -106,6 +133,21 @@ export function TransactionsScreen({
           <div className="spinner" />
           <span className="small muted">Loading more…</span>
         </div>
+      )}
+
+      {reviewing && (
+        <QuickReviewSheet
+          transactions={pending}
+          hidden={hidden}
+          onClose={async () => {
+            setReviewing(false);
+            await Promise.all([feed.reload(), reloadPending()]);
+          }}
+          onDone={async (message) => {
+            await Promise.all([feed.reload(), reloadPending()]);
+            onToast(message);
+          }}
+        />
       )}
 
       {selected && (

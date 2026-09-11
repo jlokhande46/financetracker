@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { analyseMonth, addMonths, startOfMonth } from "../../domain/analysis";
+import { analyseMonth, addMonths, inMonth, needsWants, startOfMonth } from "../../domain/analysis";
+import { INTENT_META, type CategoryIntent } from "../../domain/types";
 import { findCategory } from "../../domain/categories";
 import { creditCardBillDates } from "../../domain/billMatching";
 import { dueDescription, STATE_META } from "../../domain/bills";
@@ -27,6 +28,10 @@ export function DashboardScreen({
   const tip = useMemo(() => tipOfTheDay(), []);
 
   const analysis = useMemo(() => analyseMonth(month, all), [month, all]);
+  const split = useMemo(
+    () => needsWants(all.filter((t) => inMonth(t.date, month))),
+    [all, month],
+  );
   const isCurrentMonth = month === startOfMonth(Date.now());
 
   const creditCards = accounts.filter((a) => a.isActive && a.type === "credit");
@@ -90,6 +95,52 @@ export function DashboardScreen({
               </span>
               <span className="muted">›</span>
             </button>
+          )}
+
+          {/* The 50/30/20 split belongs on the home screen, not only behind a
+              toggle in Insights — it's the number this app exists to show. */}
+          {split.total > 0 && (
+            <section className="card col" style={{ gap: "var(--sp-md)" }}>
+              <div className="spread">
+                <span className="section-label">Needs · Wants · Savings</span>
+                <span className="tiny muted">50 / 30 / 20</span>
+              </div>
+              <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden" }}>
+                {(["need", "want", "saving"] as CategoryIntent[]).map((i) =>
+                  split[i] > 0 ? (
+                    <div
+                      key={i}
+                      style={{ width: `${(split[i] / split.total) * 100}%`, background: INTENT_META[i].color }}
+                      title={INTENT_META[i].label}
+                    />
+                  ) : null,
+                )}
+              </div>
+              <div className="row" style={{ gap: "var(--sp-base)" }}>
+                {(["need", "want", "saving"] as CategoryIntent[]).map((i) => {
+                  const actual = (split[i] / split.total) * 100;
+                  const delta = actual - INTENT_META[i].targetPercent;
+                  return (
+                    <div key={i} className="col grow" style={{ gap: 2 }}>
+                      <span className="tiny" style={{ color: INTENT_META[i].color }}>
+                        {INTENT_META[i].label}
+                      </span>
+                      <span className="amount small" style={{ fontWeight: 700 }}>
+                        {money(split[i], hidden)}
+                      </span>
+                      <span className="tiny muted">
+                        {percent(actual)} vs {INTENT_META[i].targetPercent}%
+                        {Math.abs(delta) >= 1 && (
+                          <span style={{ color: offTarget(i, delta) ? "var(--warning-amber)" : "var(--income-green)" }}>
+                            {" "}{delta > 0 ? "↑" : "↓"}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           )}
 
           {/* What's actually outstanding right now, ahead of the month's
@@ -324,6 +375,12 @@ function CardTile({
       )}
     </button>
   );
+}
+
+/** Overspending on wants is a warning; under-saving is too. Needs over is fine. */
+function offTarget(intent: CategoryIntent, delta: number): boolean {
+  if (intent === "saving") return delta < 0;
+  return intent === "want" && delta > 0;
 }
 
 function ordinal(day: number): string {
