@@ -5,11 +5,9 @@ Web port of the iOS app. Exists because free Apple provisioning re-signs every
 
 **Status: feature-complete against the iOS app.** Dashboard, transactions feed
 with review, PDF statement import, recurring bills, budgets, goals, net worth
-with manually-tracked holdings, analytics (50/30/20), and Web Push reminders are
-all in. The Swift app in `../FinanceTracker` still runs and is unaffected by
-anything here.
-
-The one thing not carried over is the Face ID lock — see the end of this file.
+with manually-tracked holdings, analytics (50/30/20), Web Push reminders and the
+app lock are all in. The Swift app in `../FinanceTracker` still runs and is
+unaffected by anything here.
 
 ## Why a backend at all
 
@@ -234,13 +232,48 @@ transactions. Tap any account or card on the dashboard to set its opening
 balance, which is what the iOS build never let you do — its net worth read off
 seeded sample numbers that never updated.
 
+## The app lock
+
+Settings → Privacy turns on a WebAuthn platform authenticator — Face ID, Touch
+ID, or the device passcode — asked for on launch and again after the app has
+been backgrounded for 30 seconds.
+
+Be clear about what it is. It guards a **screen, not the data**: IndexedDB stays
+readable to anything that can open devtools on an unlocked device, and with no
+server there is nothing to verify the assertion signature against. `LAContext`
+in the Swift build had the same property — the protection there was the OS's,
+not the lock's — it is only more obvious here. What it stops is the person who
+picks up your unlocked phone, which is the threat that actually happens.
+
+Three decisions worth knowing about:
+
+**A short absence curtains, a long one re-locks.** The Swift app re-locked the
+instant it backgrounded. Flipping out to the SMS app to copy an OTP and straight
+back is normal use of this thing, and demanding Face ID for it is how a lock gets
+switched off for good — so under 30 seconds the app blurs behind a curtain
+(which is also what the app switcher screenshots) and keeps its state, and over
+30 seconds it demands the biometric again. Past that point nothing behind the
+lock is even mounted, so there is no ledger in the DOM to screenshot.
+
+**The toggle verifies in both directions.** Enabling without authenticating is
+how you end up behind a lock you can't satisfy; disabling without authenticating
+means whoever is holding the phone can just switch it off. The iOS toggle did
+the same.
+
+**There is a way out, and it appears only after three failed attempts.** Safari
+reports a cancelled prompt and a vanished credential identically, so a cleared
+passkey, a restored backup, or a new phone is indistinguishable from a fumbled
+unlock — and a finance app with no account and no reset email would otherwise
+lock you out of your own ledger permanently. The escape removes the lock and
+nothing else; no transaction is touched. Yes, that means someone holding the
+device can eventually get in, which is the same admission as the first
+paragraph.
+
+Push and the lock are independent: reminders keep arriving while the app is
+locked, since they are sent from the Worker and never carry an amount.
+
 ## Not carried over
 
-- **Face ID lock.** The web equivalent is WebAuthn with a platform
-  authenticator, which does reach Face ID on iOS — but it guards a screen, not
-  the data, since IndexedDB stays readable to anything with the device unlocked.
-  `LAContext` had the same property; it's just less obvious here. Hide amounts
-  covers the shoulder-surf case in the meantime.
 - **Local-only privacy.** SMS text now transits your Worker. It's your own
   Cloudflare account rather than a third party, but it is no longer on-device
   only. Reminder text does too — though not your transactions, which never
