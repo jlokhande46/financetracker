@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { prefs, serverConfig } from "../../sync/config";
+import {
+  disableAppLock, enableAppLock, lockPrefs, lockSupport, type LockSupport,
+} from "../../auth/appLock";
 import { syncInbox, testConnection } from "../../sync/sync";
 import { disablePush, enablePush, pushPrefs, pushSupport, sendTestPush } from "../../sync/push";
 import { db } from "../../db/db";
@@ -31,7 +34,14 @@ export function SettingsScreen({
   const [pushOptions, setPushOptions] = useState<ScheduleOptions>(pushPrefs.options);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushDetail, setPushDetail] = useState<string | null>(null);
+  const [lockOn, setLockOn] = useState(lockPrefs.enabled);
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockDetail, setLockDetail] = useState<string | null>(null);
+  // Platform-authenticator availability is a promise, unlike push support.
+  const [lockAvailable, setLockAvailable] = useState<LockSupport | null>(null);
   const support = pushSupport();
+
+  useEffect(() => { void lockSupport().then(setLockAvailable); }, []);
 
   const loadAudit = async () => {
     const rows = await db.audit.orderBy("timestamp").reverse().limit(30).toArray();
@@ -110,6 +120,21 @@ export function SettingsScreen({
     setPushBusy(false);
     // The schedule is rebuilt and re-uploaded next time the app opens.
     await onDataChanged();
+  }
+
+  /**
+   * The toggle only moves once the authenticator has actually answered — in
+   * both directions. Enabling without verifying is how someone ends up behind
+   * a lock they can't satisfy; disabling without verifying means whoever is
+   * holding the phone can just switch it off.
+   */
+  async function toggleLock(next: boolean) {
+    setLockBusy(true);
+    setLockDetail(null);
+    const result = next ? await enableAppLock() : await disableAppLock();
+    setLockOn(lockPrefs.enabled);
+    setLockDetail(result.detail);
+    setLockBusy(false);
   }
 
   function setOption(key: keyof ScheduleOptions, value: boolean) {
@@ -337,6 +362,40 @@ export function SettingsScreen({
             ))}
           </div>
         </div>
+      </section>
+
+      {/* ── Privacy ────────────────────────────────────────────────── */}
+      <section className="card col" style={{ gap: "var(--sp-md)" }}>
+        <span className="section-label">Privacy</span>
+        <p className="tiny muted" style={{ margin: 0 }}>
+          Face ID, Touch ID or your device passcode, asked for when you open the app and
+          again after it's been in the background a while. It guards the screen, not the
+          database — anything that can open devtools on an unlocked device can still read
+          it. The iOS app's Face ID lock worked the same way; it's just more obvious here.
+        </p>
+
+        {lockAvailable && !lockAvailable.supported ? (
+          <span className="small" style={{ color: "var(--warning-amber)" }}>
+            {lockAvailable.reason}
+          </span>
+        ) : (
+          <label className="spread" style={{ cursor: lockBusy ? "progress" : "pointer" }}>
+            <span className="col" style={{ gap: 2 }}>
+              <span className="small">App lock</span>
+              <span className="tiny muted">
+                {lockBusy ? "Waiting for the authenticator…" : "Unlock with Face ID or your passcode"}
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={lockOn}
+              disabled={lockBusy || lockAvailable === null}
+              onChange={(e) => void toggleLock(e.target.checked)}
+              style={{ width: 20, height: 20, accentColor: "var(--brand-primary)" }}
+            />
+          </label>
+        )}
+        {lockDetail && <p className="tiny" style={{ margin: 0 }}>{lockDetail}</p>}
       </section>
 
       {/* ── SMS activity ───────────────────────────────────────────── */}

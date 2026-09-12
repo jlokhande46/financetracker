@@ -247,3 +247,15 @@ input, select { font: inherit; color: inherit; }
   z-index: 200;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
+
+/* Backgrounded briefly with the app lock on. Blurs the app in the switcher
+   snapshot without unmounting it, so a quick flip to the SMS app and back
+   doesn't cost the user their scroll position or an open sheet. */
+.curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, var(--bg-primary) 55%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
