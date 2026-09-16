@@ -11,6 +11,7 @@ import { Bar, CategoryDot, EmptyState } from "../components";
 import { AccountSheet } from "./AccountSheet";
 import { fullDate, money, moneyCompact, monthYear, percent } from "../format";
 import { useAccounts, useAllTransactions, usePendingReview } from "../../state/useStore";
+import { dismissedInsights } from "../../state/dismissedInsights";
 import { usePlan } from "../../state/usePlan";
 import type { Account } from "../../domain/types";
 
@@ -37,12 +38,17 @@ export function DashboardScreen({
   const isCurrentMonth = month === startOfMonth(Date.now());
 
   const subscriptions = useMemo(() => detectSubscriptions(all), [all]);
+  // Bumped by a dismissal so the list re-filters without a reload.
+  const [dismissedAt, setDismissedAt] = useState(0);
   const insights = useMemo(
     () => generateInsights({ all, budgets: plan.budgets, goals: plan.goals, month })
       // The recurring-charges section is right below and says it better, so
       // that insight would just be the same sentence twice.
-      .filter((i) => !(i.kind === "subscriptions" && subscriptions.length > 0)),
-    [all, plan.budgets, plan.goals, month, subscriptions.length],
+      .filter((i) => !(i.kind === "subscriptions" && subscriptions.length > 0))
+      // Ids are stable hashes of kind + month, so a card waved away stays away
+      // across refresh, month change and relaunch (PF-19 / PF-30).
+      .filter((i) => !dismissedInsights.has(i.id)),
+    [all, plan.budgets, plan.goals, month, subscriptions.length, dismissedAt],
   );
 
   const creditCards = accounts.filter((a) => a.isActive && a.type === "credit");
@@ -116,11 +122,24 @@ export function DashboardScreen({
               <span className="section-label">Worth knowing</span>
               {insights.map((i) => (
                 <div
-                  key={i.kind}
+                  key={i.id}
                   className="card col"
-                  style={{ gap: 4, borderLeft: `3px solid ${i.color}` }}
+                  style={{ gap: 4, borderLeft: `3px solid ${i.color}`, position: "relative" }}
                 >
-                  <span className="small" style={{ fontWeight: 600 }}>{i.headline}</span>
+                  <div className="spread" style={{ gap: "var(--sp-sm)" }}>
+                    <span className="small" style={{ fontWeight: 600 }}>{i.headline}</span>
+                    <button
+                      aria-label="Dismiss insight"
+                      className="muted"
+                      style={{ fontSize: 16, lineHeight: 1, flexShrink: 0, padding: "0 2px" }}
+                      onClick={() => {
+                        dismissedInsights.dismiss(i.id);
+                        setDismissedAt(Date.now());
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
                   <span className="tiny muted" style={{ lineHeight: 1.5 }}>{i.detail}</span>
                 </div>
               ))}

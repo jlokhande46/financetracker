@@ -28,6 +28,25 @@ export interface Insight {
   color: string;
   /** Lower sorts first. */
   priority: number;
+  /**
+   * Stable across refreshes, month changes and relaunches, so dismissing one
+   * makes it stay gone. Derived from kind + month rather than position, which
+   * is what the Swift build had to learn (PF-30) after dismissals kept coming
+   * back on pull-to-refresh.
+   */
+  id: string;
+}
+
+/** FNV-1a, matching the Swift implementation's choice of hash. */
+export function insightId(kind: InsightKind, month: number): string {
+  const d = new Date(month);
+  const input = `${kind}:${d.getFullYear()}-${d.getMonth() + 1}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
 }
 
 const inr = (p: Paise) =>
@@ -56,7 +75,7 @@ export function generateInsights(input: InsightInput): Insight[] {
   const expenses = spendable.filter((t) => t.type === "debit");
   const totalSpend = expenses.reduce((s, t) => s + t.amount, 0);
 
-  const out: Insight[] = [];
+  const out: Array<Omit<Insight, "id">> = [];
 
   // ── the 50/30/20 frame ─────────────────────────────────────────────────────
   const split = needsWants(monthTxns);
@@ -185,7 +204,10 @@ export function generateInsights(input: InsightInput): Insight[] {
     });
   }
 
-  return out.sort((a, b) => a.priority - b.priority).slice(0, 4);
+  return out
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, 4)
+    .map((insight) => ({ ...insight, id: insightId(insight.kind, month) }));
 }
 
 /** A category at least 60% above its own trailing three-month average. */
@@ -193,7 +215,7 @@ function findCategorySpike(
   live: Transaction[],
   month: number,
   thisMonth: Map<string, Paise>,
-): Insight | null {
+): Omit<Insight, "id"> | null {
   let best: { slug: string; amount: Paise; average: Paise; ratio: number } | null = null;
 
   for (const [slug, amount] of thisMonth) {
@@ -233,7 +255,7 @@ function findUnusualCharge(
   expenses: Transaction[],
   live: Transaction[],
   month: number,
-): Insight | null {
+): Omit<Insight, "id"> | null {
   const history = live.filter(
     (t) => t.type === "debit" && !isTransferCategory(t.categorySlug) && !inMonth(t.date, month),
   );

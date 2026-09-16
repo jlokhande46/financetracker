@@ -232,6 +232,43 @@ transactions. Tap any account or card on the dashboard to set its opening
 balance, which is what the iOS build never let you do — its net worth read off
 seeded sample numbers that never updated.
 
+## The feed
+
+Everything the Swift feed could do, it can do — and the pieces that took the
+longest to get right there are the ones worth knowing about here.
+
+**Needs / Wants / Savings is per transaction, not per category.** A category's
+mapping is only a default. Swipe a row right for Need, left for Want, or tap the
+chip in its subtitle to cycle default → need → want → saving. The 50/30/20 card
+on Home and in Insights reads the override, so moving one row changes the split
+immediately. Income and card payments have no chip at all, because nothing they
+could be set to would change a number.
+
+The drag is hand-rolled on pointer events: it has to give the vertical axis back
+to the browser (`touch-action: pan-y`) or the feed feels stuck, and it has to
+swallow the click that follows a swipe or every gesture also opens the detail
+sheet. Both of those are the sort of thing that only shows up on a real device,
+so they are pinned by the checks in `feed.test.ts` and were caught in the
+browser rather than in review.
+
+**The review queue has two doors.** The banner above the feed appears when
+something is pending — and because that banner disappears the moment the queue
+empties, "Needs review" is also a filter chip that is always there. Quick Review
+itself steps one card at a time, snapshotted on mount so confirming a row can't
+shift the ones behind it, with a back button because a mis-tapped category on
+the previous card is otherwise unreachable until the whole queue is done.
+
+**Filters say what they're doing.** Type, category, source, tags, date range,
+amount range and the review queue, with a banner above the feed listing every
+active condition — tags marked `#like-this`, since a tag filter left on is the
+one that looks like an ordinary feed with mysteriously less in it. Tags are
+AND, not OR: `#trip` plus `#reimbursable` means the rows that are both.
+
+**Learned rules are visible and editable.** Settings → Learned rules lists every
+"Remember" you've ticked, with per-rule edit and delete. A single wrong rule
+otherwise keeps re-applying itself invisibly, and there is no way to work out
+why a merchant keeps landing in the wrong category until you can see the list.
+
 ## The app lock
 
 Settings → Privacy turns on a WebAuthn platform authenticator — Face ID, Touch
