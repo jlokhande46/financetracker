@@ -70,6 +70,8 @@ export function QuickReviewSheet({
         hidden={hidden}
         busy={busy}
         setBusy={setBusy}
+        canGoBack={index > 0}
+        onBack={() => setIndex(index - 1)}
         onConfirmed={() => void advance(true)}
         onSkipped={() => void advance(false)}
         onDeleted={() => void advance(false)}
@@ -84,12 +86,14 @@ export function QuickReviewSheet({
  * the next card is exactly the kind of thing that quietly corrupts a ledger.
  */
 function ReviewCard({
-  txn, hidden, busy, setBusy, onConfirmed, onSkipped, onDeleted,
+  txn, hidden, busy, setBusy, canGoBack, onBack, onConfirmed, onSkipped, onDeleted,
 }: {
   txn: Transaction;
   hidden: boolean;
   busy: boolean;
   setBusy: (v: boolean) => void;
+  canGoBack: boolean;
+  onBack: () => void;
   onConfirmed: () => void;
   onSkipped: () => void;
   onDeleted: () => void;
@@ -250,6 +254,18 @@ function ReviewCard({
           Save and next
         </button>
         <div className="row" style={{ gap: "var(--sp-sm)" }}>
+          {/* Going back matters more here than anywhere else in the app: a
+              mis-tapped category on the previous card is otherwise unreachable
+              until the whole queue is done. */}
+          <button
+            className="btn btn-secondary"
+            disabled={busy || !canGoBack}
+            onClick={onBack}
+            aria-label="Previous transaction"
+            style={{ flexShrink: 0 }}
+          >
+            ←
+          </button>
           <button
             className="btn btn-secondary grow"
             disabled={busy}

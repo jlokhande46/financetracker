@@ -132,7 +132,14 @@ export default function App() {
           />
         )}
         {tab === "transactions" && (
-          <TransactionsScreen hidden={hidden} onToast={showToast} />
+          // The tab badge reads a different copy of the pending list, so the
+          // feed has to say when it has emptied the queue — otherwise the badge
+          // keeps advertising work that's already done.
+          <TransactionsScreen
+            hidden={hidden}
+            onToast={showToast}
+            onPendingChanged={reloadPending}
+          />
         )}
         {tab === "plan" && <PlanScreen hidden={hidden} onToast={showToast} />}
         {tab === "analytics" && <AnalyticsScreen hidden={hidden} onToast={showToast} />}

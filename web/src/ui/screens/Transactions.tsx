@@ -1,25 +1,42 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORIES, findCategory } from "../../domain/categories";
 import { moneyPrecise } from "../format";
 import {
   DayHeader, EmptyState, Sheet, TransactionRow,
 } from "../components";
 import {
-  confirmReview, deleteTransaction, saveTransaction, usePendingReview, useTransactionFeed,
+  confirmReview, deleteTransaction, saveTransaction, setIntentOverride, updateTransaction,
+  useAccounts, useKnownTags, usePendingReview, useTransactionFeed,
 } from "../../state/useStore";
 import { QuickReviewSheet } from "./QuickReview";
-import type { Transaction } from "../../domain/types";
+import { FilterSheet } from "./FilterSheet";
+import {
+  activeFilterCount, EMPTY_FILTER, filterSummary, isFilterActive,
+} from "../../domain/filters";
+import { intentOf, isOverridden, supportsIntent } from "../../domain/intent";
+import { INTENT_META, type CategoryIntent, type Transaction } from "../../domain/types";
 
 const QUICK_FILTERS = ["food", "travel", "shopping", "bills", "entertainment"];
 
 export function TransactionsScreen({
-  hidden, onToast,
-}: { hidden: boolean; onToast: (m: string) => void }) {
+  hidden, onToast, onPendingChanged,
+}: {
+  hidden: boolean;
+  onToast: (m: string) => void;
+  /** Tells the shell to re-read the review queue, which drives the tab badge. */
+  onPendingChanged?: () => void | Promise<void>;
+}) {
   const feed = useTransactionFeed();
   const { pending, reload: reloadPending } = usePendingReview();
+  const { accounts } = useAccounts();
+  const knownTags = useKnownTags();
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [filtering, setFiltering] = useState(false);
   const sentinel = useRef<HTMLDivElement | null>(null);
+
+  const { filter, setFilter } = feed;
+  const summary = useMemo(() => filterSummary(filter), [filter]);
 
   // Infinite scroll via IntersectionObserver rather than firing on every row's
   // mount — the observer only wakes when the sentinel actually reaches the
@@ -34,6 +51,33 @@ export function TransactionsScreen({
     io.observe(node);
     return () => io.disconnect();
   }, [feed.hasMore, feed.loadMore, feed]);
+
+  async function applyIntent(txn: Transaction, intent: CategoryIntent | undefined) {
+    await setIntentOverride(txn, intent);
+    await feed.reload();
+    onToast(
+      intent === undefined ? "Back to its category's default"
+        : intent === "saving" ? "Marked as savings"
+        : `Marked as a ${INTENT_META[intent].label.replace(/s$/, "").toLowerCase()}`,
+    );
+  }
+
+  function toggleTag(tag: string) {
+    setFilter({
+      ...filter,
+      tags: filter.tags.includes(tag)
+        ? filter.tags.filter((t) => t !== tag)
+        : [...filter.tags, tag],
+    });
+  }
+
+  const categoryChip = (slug: string | null) => {
+    const selectedSlug = filter.categories.length === 1 ? filter.categories[0] : null;
+    return {
+      "data-selected": slug === null ? filter.categories.length === 0 : selectedSlug === slug,
+      onClick: () => setFilter({ ...filter, categories: slug === null || selectedSlug === slug ? [] : [slug] }),
+    };
+  };
 
   return (
     <div className="screen">
@@ -63,29 +107,58 @@ export function TransactionsScreen({
         </button>
       )}
 
-      <input
-        className="field"
-        placeholder="Search merchants, categories…"
-        value={feed.query}
-        onChange={(e) => feed.setQuery(e.target.value)}
-        style={{ marginBottom: "var(--sp-md)" }}
-      />
+      <div className="row" style={{ gap: "var(--sp-sm)", marginBottom: "var(--sp-md)" }}>
+        <input
+          className="field grow"
+          placeholder="Search merchants, tags, notes…"
+          value={filter.query}
+          onChange={(e) => setFilter({ ...filter, query: e.target.value })}
+        />
+        <button
+          className="btn btn-secondary"
+          onClick={() => setFiltering(true)}
+          style={{ flexShrink: 0 }}
+        >
+          Filter{activeFilterCount(filter) > 0 ? ` · ${activeFilterCount(filter)}` : ""}
+        </button>
+      </div>
+
+      {/* PF-17: say what's being hidden. A filter left on is otherwise
+          indistinguishable from a month where nothing happened. */}
+      {isFilterActive(filter) && (
+        <div
+          className="card row"
+          style={{
+            gap: "var(--sp-sm)", flexWrap: "wrap", marginBottom: "var(--sp-md)",
+            background: "rgba(123,110,246,0.08)", border: "1px solid rgba(123,110,246,0.3)",
+          }}
+        >
+          <span className="tiny muted">Showing</span>
+          {summary.map((label) => (
+            <span key={label} className="pill" style={{ background: "var(--bg-elevated)", color: "var(--text-primary)" }}>
+              {label}
+            </span>
+          ))}
+          <button className="tiny grow" style={{ textAlign: "right", color: "var(--brand-primary)" }}
+            onClick={() => setFilter(EMPTY_FILTER)}>
+            Clear
+          </button>
+        </div>
+      )}
 
       <div className="hscroll" style={{ marginBottom: "var(--sp-base)" }}>
+        <button className="chip" {...categoryChip(null)}>All</button>
+        {/* Keeps the review queue one tap away even when nothing is pending,
+            which is the state the banner above disappears in. */}
         <button
           className="chip"
-          data-selected={feed.category === null}
-          onClick={() => feed.setCategory(null)}
+          data-selected={filter.needsReviewOnly}
+          onClick={() => setFilter({ ...filter, needsReviewOnly: !filter.needsReviewOnly })}
         >
-          All
+          Needs review
         </button>
         {QUICK_FILTERS.map((slug) => (
-          <button
-            key={slug}
-            className="chip"
-            data-selected={feed.category === slug}
-            onClick={() => feed.setCategory(feed.category === slug ? null : slug)}
-          >
+          <button key={slug} className="chip" {...categoryChip(slug)}>
             {findCategory(slug).name}
           </button>
         ))}
@@ -97,12 +170,15 @@ export function TransactionsScreen({
         </div>
       ) : feed.groups.length === 0 ? (
         <EmptyState
-          title={feed.query || feed.category ? "No matches" : "No transactions yet"}
+          title={isFilterActive(filter) ? "No matches" : "No transactions yet"}
           subtitle={
-            feed.query || feed.category
-              ? "Try a different search or clear the filter."
+            isFilterActive(filter)
+              ? "Nothing matches this filter. Clear it to see the whole ledger again."
               : "Connect your Shortcut in Settings, or add one manually with the + button."
           }
+          action={isFilterActive(filter)
+            ? <button className="btn" onClick={() => setFilter(EMPTY_FILTER)}>Clear filter</button>
+            : undefined}
         />
       ) : (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
@@ -116,7 +192,14 @@ export function TransactionsScreen({
               />
               {group.rows.map((txn, i) => (
                 <div key={txn.id}>
-                  <TransactionRow txn={txn} hidden={hidden} onClick={() => setSelected(txn)} />
+                  <TransactionRow
+                    txn={txn}
+                    hidden={hidden}
+                    onClick={() => setSelected(txn)}
+                    onSetIntent={(intent) => void applyIntent(txn, intent)}
+                    selectedTags={filter.tags}
+                    onToggleTag={toggleTag}
+                  />
                   {i < group.rows.length - 1 && (
                     <div className="divider" style={{ marginLeft: 68 }} />
                   )}
@@ -127,6 +210,13 @@ export function TransactionsScreen({
         </div>
       )}
 
+      {/* Swipe is invisible until someone tries it, so say it once. */}
+      {feed.groups.length > 0 && (
+        <p className="tiny muted" style={{ textAlign: "center", margin: "var(--sp-md) 0 0" }}>
+          Swipe a row right for Need, left for Want — or tap its chip to cycle.
+        </p>
+      )}
+
       <div ref={sentinel} style={{ height: 1 }} />
       {feed.loadingMore && (
         <div className="row" style={{ justifyContent: "center", padding: "var(--sp-base)" }}>
@@ -135,16 +225,25 @@ export function TransactionsScreen({
         </div>
       )}
 
+      {filtering && (
+        <FilterSheet
+          filter={filter}
+          knownTags={knownTags}
+          onApply={setFilter}
+          onClose={() => setFiltering(false)}
+        />
+      )}
+
       {reviewing && (
         <QuickReviewSheet
           transactions={pending}
           hidden={hidden}
           onClose={async () => {
             setReviewing(false);
-            await Promise.all([feed.reload(), reloadPending()]);
+            await Promise.all([feed.reload(), reloadPending(), onPendingChanged?.()]);
           }}
           onDone={async (message) => {
-            await Promise.all([feed.reload(), reloadPending()]);
+            await Promise.all([feed.reload(), reloadPending(), onPendingChanged?.()]);
             onToast(message);
           }}
         />
@@ -154,9 +253,11 @@ export function TransactionsScreen({
         <TransactionSheet
           txn={selected}
           hidden={hidden}
+          accounts={accounts}
+          knownTags={knownTags}
           onClose={() => setSelected(null)}
           onChanged={async (msg) => {
-            await feed.reload();
+            await Promise.all([feed.reload(), reloadPending(), onPendingChanged?.()]);
             setSelected(null);
             if (msg) onToast(msg);
           }}
@@ -166,32 +267,165 @@ export function TransactionsScreen({
   );
 }
 
+/** Category grid, shared by the detail sheet and manual entry. */
+function CategoryPicker({
+  slug, onPick, creditOnly,
+}: { slug: string; onPick: (slug: string) => void; creditOnly: boolean }) {
+  const pickable = CATEGORIES.filter((c) => (creditOnly ? c.isIncome || c.isTransfer : !c.isIncome));
+  return (
+    <div
+      style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+        gap: "var(--sp-sm)", margin: "var(--sp-sm) 0 var(--sp-base)",
+      }}
+    >
+      {pickable.map((c) => (
+        <button
+          key={c.slug}
+          onClick={() => onPick(c.slug)}
+          style={{
+            padding: "8px 6px", borderRadius: "var(--r-md)", fontSize: 12,
+            background: slug === c.slug ? c.colorHex : "var(--bg-elevated)",
+            color: slug === c.slug ? "#fff" : "var(--text-secondary)",
+          }}
+        >
+          {c.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Tag editor with autocomplete over every tag already in use. */
+function TagEditor({
+  tags, knownTags, onChange,
+}: { tags: string[]; knownTags: string[]; onChange: (tags: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const suggestions = useMemo(() => {
+    const d = draft.trim().toLowerCase();
+    const pool = knownTags.filter((t) => !tags.includes(t));
+    return (d ? pool.filter((t) => t.toLowerCase().includes(d)) : pool).slice(0, 6);
+  }, [knownTags, tags, draft]);
+
+  function add(tag: string) {
+    const clean = tag.trim().replace(/^#/, "");
+    if (clean && !tags.includes(clean)) onChange([...tags, clean]);
+    setDraft("");
+  }
+
+  return (
+    <>
+      {tags.length > 0 && (
+        <div className="row" style={{ gap: "var(--sp-sm)", flexWrap: "wrap", margin: "var(--sp-sm) 0" }}>
+          {tags.map((t) => (
+            <button key={t} className="chip" data-selected onClick={() => onChange(tags.filter((x) => x !== t))}>
+              {t} ✕
+            </button>
+          ))}
+        </div>
+      )}
+      <input
+        className="field"
+        placeholder="Add a tag, press Enter"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(draft); } }}
+      />
+      {suggestions.length > 0 && (
+        <div className="hscroll" style={{ marginTop: "var(--sp-sm)" }}>
+          {suggestions.map((t) => (
+            <button key={t} className="chip" onClick={() => add(t)}>+ {t}</button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Needs / Wants / Savings, with the category's own answer as the fourth option. */
+function IntentPicker({
+  txn, value, onChange,
+}: {
+  txn: Transaction;
+  value: CategoryIntent | undefined;
+  onChange: (v: CategoryIntent | undefined) => void;
+}) {
+  const fallback = intentOf({ ...txn, intentOverride: undefined });
+  return (
+    <div className="row" style={{ gap: "var(--sp-sm)", flexWrap: "wrap", margin: "var(--sp-sm) 0 var(--sp-base)" }}>
+      <button
+        className="chip"
+        data-selected={value === undefined}
+        onClick={() => onChange(undefined)}
+      >
+        Default{fallback ? ` (${INTENT_META[fallback].label.replace(/s$/, "")})` : ""}
+      </button>
+      {(["need", "want", "saving"] as CategoryIntent[]).map((i) => (
+        <button
+          key={i}
+          className="chip"
+          data-selected={value === i}
+          onClick={() => onChange(i)}
+          style={value === i ? { background: INTENT_META[i].color, color: "#fff" } : undefined}
+        >
+          {INTENT_META[i].label.replace(/s$/, "")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function TransactionSheet({
-  txn, hidden, onClose, onChanged,
+  txn, hidden, accounts, knownTags, onClose, onChanged,
 }: {
   txn: Transaction;
   hidden: boolean;
+  accounts: Array<{ id: string; name: string; last4?: string; colorHex: string }>;
+  knownTags: string[];
   onClose: () => void;
   onChanged: (message?: string) => void | Promise<void>;
 }) {
   const [name, setName] = useState(txn.merchantName || txn.merchantRaw);
   const [slug, setSlug] = useState(txn.categorySlug);
+  const [tags, setTags] = useState<string[]>(txn.tags);
+  const [notes, setNotes] = useState(txn.notes ?? "");
+  const [accountId, setAccountId] = useState(txn.accountId);
+  const [recurring, setRecurring] = useState(txn.isRecurring);
+  const [intent, setIntent] = useState<CategoryIntent | undefined>(txn.intentOverride);
   const [rememberName, setRememberName] = useState(true);
   const [rememberCategory, setRememberCategory] = useState(true);
   const [applyToPast, setApplyToPast] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const needsReview = !txn.isConfirmed && txn.confidence < 0.85;
-  const pickable = CATEGORIES.filter((c) =>
-    txn.type === "credit" ? c.isIncome || c.isTransfer : !c.isIncome,
-  );
+  const review = !txn.isConfirmed && txn.confidence < 0.85;
+  const categoryChanged = slug !== txn.categorySlug;
+  const nameChanged = name !== (txn.merchantName || txn.merchantRaw);
 
   async function save() {
     setBusy(true);
-    const updated = await confirmReview({
-      transaction: txn, newName: name, newSlug: slug,
-      rememberName, rememberCategory, applyToPast,
-    });
+    // Everything that isn't the merchant-rule machinery goes in one write, so
+    // no field can be silently dropped by a partial update (PF-29).
+    const next: Transaction = {
+      ...txn,
+      tags,
+      notes: notes.trim() || undefined,
+      accountId,
+      isRecurring: recurring,
+    };
+    if (intent === undefined) delete next.intentOverride;
+    else next.intentOverride = intent;
+    await updateTransaction(next);
+
+    // The rule side only runs when there's something to learn from.
+    const updated = (nameChanged || categoryChanged || review)
+      ? await confirmReview({
+          transaction: next, newName: name, newSlug: slug, newTags: tags,
+          rememberName: rememberName && nameChanged,
+          rememberCategory: rememberCategory && categoryChanged,
+          applyToPast,
+        })
+      : 0;
+
     await onChanged(
       updated > 0
         ? `Updated ${updated} past transaction${updated === 1 ? "" : "s"} too`
@@ -201,7 +435,7 @@ function TransactionSheet({
 
   return (
     <Sheet
-      title={needsReview ? "Review transaction" : "Edit transaction"}
+      title={review ? "Review transaction" : "Edit transaction"}
       onClose={onClose}
       footer={
         <div className="col" style={{ gap: "var(--sp-sm)" }}>
@@ -236,6 +470,11 @@ function TransactionSheet({
         <span className="tiny muted">
           {new Date(txn.date).toLocaleString("en-IN")} · {txn.source.toUpperCase()}
         </span>
+        {isOverridden(txn) && (
+          <span className="tiny" style={{ color: INTENT_META[intentOf(txn)!].color }}>
+            You moved this to {INTENT_META[intentOf(txn)!].label.toLowerCase()}
+          </span>
+        )}
       </div>
 
       <label className="section-label">Merchant</label>
@@ -247,31 +486,62 @@ function TransactionSheet({
       />
 
       <label className="section-label">Category</label>
-      <div
-        style={{
-          display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
-          gap: "var(--sp-sm)", margin: "var(--sp-sm) 0 var(--sp-base)",
-        }}
-      >
-        {pickable.map((c) => (
+      <CategoryPicker slug={slug} onPick={setSlug} creditOnly={txn.type === "credit"} />
+
+      {supportsIntent({ ...txn, categorySlug: slug }) && (
+        <>
+          <label className="section-label">Counts as</label>
+          <IntentPicker txn={{ ...txn, categorySlug: slug }} value={intent} onChange={setIntent} />
+        </>
+      )}
+
+      {/* PF-13's account chip row. A row saved before its card existed can be
+          re-pointed here rather than staying orphaned forever. */}
+      <label className="section-label">Account</label>
+      <div className="row" style={{ gap: "var(--sp-sm)", flexWrap: "wrap", margin: "var(--sp-sm) 0 var(--sp-base)" }}>
+        <button className="chip" data-selected={!accountId} onClick={() => setAccountId(undefined)}>
+          None
+        </button>
+        {accounts.map((a) => (
           <button
-            key={c.slug}
-            onClick={() => setSlug(c.slug)}
-            style={{
-              padding: "8px 6px", borderRadius: "var(--r-md)", fontSize: 12,
-              background: slug === c.slug ? c.colorHex : "var(--bg-elevated)",
-              color: slug === c.slug ? "#fff" : "var(--text-secondary)",
-            }}
+            key={a.id}
+            className="chip"
+            data-selected={accountId === a.id}
+            onClick={() => setAccountId(a.id)}
+            style={accountId === a.id ? { background: a.colorHex, color: "#fff" } : undefined}
           >
-            {c.name}
+            {a.name}{a.last4 ? ` ••${a.last4}` : ""}
           </button>
         ))}
       </div>
 
+      <label className="section-label">Tags</label>
+      <TagEditor tags={tags} knownTags={knownTags} onChange={setTags} />
+
+      <label className="section-label" style={{ display: "block", marginTop: "var(--sp-base)" }}>Notes</label>
+      <textarea
+        className="field"
+        rows={2}
+        placeholder="Anything worth remembering about this one"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        style={{ margin: "var(--sp-xs) 0 var(--sp-base)", resize: "vertical" }}
+      />
+
       <div className="col" style={{ gap: "var(--sp-sm)" }}>
-        <Toggle label="Remember this name" checked={rememberName} onChange={setRememberName} />
-        <Toggle label="Remember this category" checked={rememberCategory} onChange={setRememberCategory} />
-        {rememberCategory && (
+        <Toggle
+          label="Recurring"
+          hint="Marks this as a repeating charge"
+          checked={recurring}
+          onChange={setRecurring}
+        />
+        {nameChanged && (
+          <Toggle label="Remember this name" checked={rememberName} onChange={setRememberName} />
+        )}
+        {categoryChanged && (
+          <Toggle label="Remember this category" checked={rememberCategory} onChange={setRememberCategory} />
+        )}
+        {categoryChanged && rememberCategory && (
           <Toggle
             label="Fix past transactions too"
             hint="Re-categorises every past transaction from this merchant"
@@ -313,7 +583,7 @@ function Toggle({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        style={{ width: 20, height: 20, accentColor: "var(--brand-primary)" }}
+        style={{ width: 20, height: 20, accentColor: "var(--brand-primary)", flexShrink: 0 }}
       />
     </label>
   );
@@ -323,15 +593,19 @@ function Toggle({
 export function AddTransactionSheet({
   onClose, onSaved,
 }: { onClose: () => void; onSaved: () => void | Promise<void> }) {
+  const { accounts } = useAccounts();
+  const knownTags = useKnownTags();
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<"debit" | "credit">("debit");
   const [merchant, setMerchant] = useState("");
   const [slug, setSlug] = useState("others");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [accountId, setAccountId] = useState<string | undefined>(undefined);
+  const [tags, setTags] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
 
   const paise = Math.round(Number(amount) * 100);
   const valid = Number.isFinite(paise) && paise > 0;
-  const pickable = CATEGORIES.filter((c) => (type === "credit" ? c.isIncome : !c.isIncome));
 
   async function save() {
     if (!valid) return;
@@ -353,7 +627,9 @@ export function AddTransactionSheet({
       confidence: 1,
       isConfirmed: true,
       isRecurring: false,
-      tags: [],
+      tags,
+      notes: notes.trim() || undefined,
+      accountId,
       createdAt: Date.now(),
     });
     await onSaved();
@@ -419,26 +695,38 @@ export function AddTransactionSheet({
       />
 
       <label className="section-label">Category</label>
-      <div
-        style={{
-          display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
-          gap: "var(--sp-sm)", marginTop: "var(--sp-sm)",
-        }}
-      >
-        {pickable.map((c) => (
+      <CategoryPicker slug={slug} onPick={setSlug} creditOnly={type === "credit"} />
+
+      <label className="section-label">Account</label>
+      <div className="row" style={{ gap: "var(--sp-sm)", flexWrap: "wrap", margin: "var(--sp-sm) 0 var(--sp-base)" }}>
+        <button className="chip" data-selected={!accountId} onClick={() => setAccountId(undefined)}>
+          None
+        </button>
+        {accounts.map((a) => (
           <button
-            key={c.slug}
-            onClick={() => setSlug(c.slug)}
-            style={{
-              padding: "8px 6px", borderRadius: "var(--r-md)", fontSize: 12,
-              background: slug === c.slug ? c.colorHex : "var(--bg-elevated)",
-              color: slug === c.slug ? "#fff" : "var(--text-secondary)",
-            }}
+            key={a.id}
+            className="chip"
+            data-selected={accountId === a.id}
+            onClick={() => setAccountId(a.id)}
+            style={accountId === a.id ? { background: a.colorHex, color: "#fff" } : undefined}
           >
-            {c.name}
+            {a.name}{a.last4 ? ` ••${a.last4}` : ""}
           </button>
         ))}
       </div>
+
+      <label className="section-label">Tags</label>
+      <TagEditor tags={tags} knownTags={knownTags} onChange={setTags} />
+
+      <label className="section-label" style={{ display: "block", marginTop: "var(--sp-base)" }}>Notes</label>
+      <textarea
+        className="field"
+        rows={2}
+        placeholder="Optional"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        style={{ margin: "var(--sp-xs) 0 0", resize: "vertical" }}
+      />
     </Sheet>
   );
 }

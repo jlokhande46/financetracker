@@ -6,6 +6,12 @@ import {
 import { syncInbox, testConnection } from "../../sync/sync";
 import { disablePush, enablePush, pushPrefs, pushSupport, sendTestPush } from "../../sync/push";
 import { db } from "../../db/db";
+import {
+  deleteAllMerchantRules, deleteMerchantRule, relinkOrphanTransactions,
+  saveMerchantRule, useMerchantRules,
+} from "../../state/useStore";
+import { dismissedInsights } from "../../state/dismissedInsights";
+import { CATEGORIES, findCategory } from "../../domain/categories";
 import { seedDefaultAccounts, seedDefaultBills } from "../../db/seed";
 import { ImportPDFSheet } from "./ImportPDF";
 import { PasteSMSSheet } from "./PasteSMS";
@@ -431,6 +437,42 @@ export function SettingsScreen({
         )}
       </section>
 
+      {/* ── Learned rules ──────────────────────────────────────────── */}
+      <MerchantRulesSection onToast={onToast} onDataChanged={onDataChanged} />
+
+      {/* ── Utilities ──────────────────────────────────────────────── */}
+      <section className="card col" style={{ gap: "var(--sp-md)" }}>
+        <span className="section-label">Utilities</span>
+        <button
+          className="btn btn-secondary btn-block"
+          onClick={async () => {
+            const n = await relinkOrphanTransactions();
+            await onDataChanged();
+            onToast(n > 0
+              ? `Linked ${n} transaction${n === 1 ? "" : "s"} to an account`
+              : "Nothing left to re-link");
+          }}
+        >
+          Re-link orphan transactions
+        </button>
+        <p className="tiny muted" style={{ margin: 0 }}>
+          Finds rows saved before their card existed and points them at the right account,
+          using only a card number that actually matches one of yours.
+        </p>
+        <button
+          className="btn btn-secondary btn-block"
+          disabled={dismissedInsights.count === 0}
+          onClick={() => {
+            const n = dismissedInsights.count;
+            dismissedInsights.restoreAll();
+            void onDataChanged();
+            onToast(`Restored ${n} hidden insight${n === 1 ? "" : "s"}`);
+          }}
+        >
+          Restore dismissed insights{dismissedInsights.count > 0 ? ` (${dismissedInsights.count})` : ""}
+        </button>
+      </section>
+
       {/* ── Data ───────────────────────────────────────────────────── */}
       <section className="card col" style={{ gap: "var(--sp-md)" }}>
         <span className="section-label">Data</span>
@@ -604,4 +646,155 @@ async function importBackup(file: File): Promise<number> {
     }
   }
   return data.transactions?.length ?? 0;
+}
+
+/**
+ * Everything the app has learned from "Remember this name / category".
+ *
+ * Worth surfacing because a single wrong rule keeps re-applying itself
+ * invisibly — the merchant just quietly lands in the wrong category forever,
+ * and until there's a list you can see, there's no way to work out why.
+ */
+function MerchantRulesSection({
+  onToast, onDataChanged,
+}: { onToast: (m: string) => void; onDataChanged: () => void | Promise<void> }) {
+  const { rules, reload } = useMerchantRules();
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+
+  const shown = rules.filter((r) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return r.key.includes(q) || r.displayName.toLowerCase().includes(q) ||
+      findCategory(r.categorySlug).name.toLowerCase().includes(q);
+  });
+
+  return (
+    <section className="card col" style={{ gap: "var(--sp-md)" }}>
+      <span className="section-label">Learned rules</span>
+      <p className="tiny muted" style={{ margin: 0 }}>
+        Saved when you tick "Remember" during review. Each one re-applies to every future
+        import of that merchant, so a wrong one is worth fixing here.
+      </p>
+
+      {rules.length === 0 ? (
+        <span className="tiny muted">
+          Nothing learned yet. Confirm a transaction in Review with "Remember" on.
+        </span>
+      ) : (
+        <>
+          <input
+            className="field"
+            placeholder={`Search ${rules.length} rule${rules.length === 1 ? "" : "s"}`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          <div className="col" style={{ gap: "var(--sp-sm)" }}>
+            {shown.slice(0, 40).map((rule) => (
+              <div key={rule.key} className="col" style={{ gap: "var(--sp-sm)" }}>
+                <div className="spread">
+                  <span className="col grow" style={{ gap: 2, minWidth: 0 }}>
+                    <span className="small truncate">{rule.displayName || rule.key}</span>
+                    <span className="tiny muted truncate">
+                      {findCategory(rule.categorySlug).name} · matched {rule.matchCount}×
+                    </span>
+                  </span>
+                  <div className="row" style={{ gap: "var(--sp-sm)", flexShrink: 0 }}>
+                    <button
+                      className="tiny"
+                      style={{ color: "var(--brand-primary)" }}
+                      onClick={() => setEditing(editing === rule.key ? null : rule.key)}
+                    >
+                      {editing === rule.key ? "Done" : "Edit"}
+                    </button>
+                    <button
+                      className="tiny"
+                      style={{ color: "var(--expense-red)" }}
+                      onClick={async () => {
+                        await deleteMerchantRule(rule.key);
+                        await reload();
+                        onToast("Rule deleted");
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                {editing === rule.key && (
+                  <div className="col" style={{ gap: "var(--sp-sm)" }}>
+                    <input
+                      className="field"
+                      value={rule.displayName}
+                      placeholder="Display name"
+                      onChange={async (e) => {
+                        await saveMerchantRule({ ...rule, displayName: e.target.value });
+                        await reload();
+                      }}
+                    />
+                    <div className="row" style={{ gap: "var(--sp-sm)", flexWrap: "wrap" }}>
+                      {CATEGORIES.filter((c) => !c.isIncome).map((c) => (
+                        <button
+                          key={c.slug}
+                          className="chip"
+                          data-selected={rule.categorySlug === c.slug}
+                          style={rule.categorySlug === c.slug
+                            ? { background: c.colorHex, color: "#fff" }
+                            : undefined}
+                          onClick={async () => {
+                            await saveMerchantRule({ ...rule, categorySlug: c.slug });
+                            await reload();
+                            await onDataChanged();
+                          }}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="divider" />
+              </div>
+            ))}
+            {shown.length > 40 && (
+              <span className="tiny muted">
+                Showing 40 of {shown.length}. Search to narrow it down.
+              </span>
+            )}
+            {shown.length === 0 && <span className="tiny muted">No rule matches that search.</span>}
+          </div>
+
+          {confirmWipe ? (
+            <div className="row" style={{ gap: "var(--sp-sm)" }}>
+              <button className="btn btn-secondary grow" onClick={() => setConfirmWipe(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn grow"
+                style={{ background: "var(--expense-red)" }}
+                onClick={async () => {
+                  const n = await deleteAllMerchantRules();
+                  setConfirmWipe(false);
+                  await reload();
+                  onToast(`Deleted ${n} rule${n === 1 ? "" : "s"}`);
+                }}
+              >
+                Delete all rules
+              </button>
+            </div>
+          ) : (
+            <button
+              className="btn btn-secondary btn-block"
+              style={{ color: "var(--expense-red)" }}
+              onClick={() => setConfirmWipe(true)}
+            >
+              Delete all rules
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
 }

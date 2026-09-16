@@ -3,7 +3,8 @@ import { db, fetchTransactionPage, type MerchantRule } from "../db/db";
 import { recalculateBalances } from "../ingest/ingest";
 import { merchantRuleKey } from "../categorization/merchantNormalizer";
 import { relativeDay } from "../ui/format";
-import type { Account, Paise, Transaction } from "../domain/types";
+import { EMPTY_FILTER, isFilterActive, matchesFilter, type TransactionFilter } from "../domain/filters";
+import type { Account, CategoryIntent, Paise, Transaction } from "../domain/types";
 
 const PAGE_SIZE = 50;
 
@@ -59,8 +60,7 @@ export function useTransactionFeed() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TransactionFilter>(EMPTY_FILTER);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -88,7 +88,7 @@ export function useTransactionFeed() {
   // whole history pulls everything first so results can't silently miss
   // older rows the way a partial view would.
   const [fullSet, setFullSet] = useState<Transaction[] | null>(null);
-  const filtering = query.trim().length > 0 || category !== null;
+  const filtering = isFilterActive(filter);
 
   useEffect(() => {
     if (!filtering) { setFullSet(null); return; }
@@ -102,18 +102,8 @@ export function useTransactionFeed() {
 
   const visible = useMemo(() => {
     const source = filtering ? (fullSet ?? []) : rows;
-    const q = query.trim().toLowerCase();
-    return source.filter((t) => {
-      if (category && t.categorySlug !== category) return false;
-      if (!q) return true;
-      return (
-        t.merchantName.toLowerCase().includes(q) ||
-        t.merchantRaw.toLowerCase().includes(q) ||
-        t.categorySlug.includes(q) ||
-        (t.notes?.toLowerCase().includes(q) ?? false)
-      );
-    });
-  }, [rows, fullSet, filtering, query, category]);
+    return source.filter((t) => matchesFilter(t, filter));
+  }, [rows, fullSet, filtering, filter]);
 
   const groups = useMemo(() => groupByDay(visible), [visible]);
 
@@ -121,7 +111,7 @@ export function useTransactionFeed() {
     rows: visible, groups, loading, loadingMore,
     hasMore: hasMore && !filtering,
     loadMore, reload,
-    query, setQuery, category, setCategory,
+    filter, setFilter,
   };
 }
 
@@ -253,4 +243,94 @@ export async function confirmReview(opts: {
 
   await recalculateBalances();
   return updated;
+}
+
+/**
+ * Move one transaction between Needs / Wants / Savings.
+ *
+ * `undefined` clears the override and hands the row back to its category's
+ * default — the fourth stop in the tap cycle, and the only way to undo a
+ * mis-swipe without editing the category itself.
+ */
+export async function setIntentOverride(
+  transaction: Transaction,
+  intent: CategoryIntent | undefined,
+): Promise<void> {
+  const next = { ...transaction };
+  if (intent === undefined) delete next.intentOverride;
+  else next.intentOverride = intent;
+  await db.transactions.put(next);
+}
+
+/**
+ * Persist an edited transaction.
+ *
+ * Every mutable field goes through in one write. PF-29 exists because the Swift
+ * repository once updated a subset and silently dropped the account link on
+ * every edit; passing the whole record is what makes that class of bug
+ * impossible here.
+ */
+export async function updateTransaction(transaction: Transaction): Promise<void> {
+  await db.transactions.put(transaction);
+  await recalculateBalances();
+}
+
+/** Every merchant rule the user has taught the app, newest first. */
+export function useMerchantRules() {
+  const [rules, setRules] = useState<MerchantRule[]>([]);
+  const reload = useCallback(async () => {
+    const all = await db.merchantRules.toArray();
+    setRules(all.sort((a, b) => b.updatedAt - a.updatedAt));
+  }, []);
+  useEffect(() => { void reload(); }, [reload]);
+  return { rules, reload };
+}
+
+export async function saveMerchantRule(rule: MerchantRule): Promise<void> {
+  await db.merchantRules.put({ ...rule, updatedAt: Date.now() });
+}
+
+export async function deleteMerchantRule(key: string): Promise<void> {
+  await db.merchantRules.delete(key);
+}
+
+export async function deleteAllMerchantRules(): Promise<number> {
+  const count = await db.merchantRules.count();
+  await db.merchantRules.clear();
+  return count;
+}
+
+/**
+ * Re-link transactions whose account couldn't be resolved at import time.
+ *
+ * The Swift build kept this in Developer Options for the same reason it's here:
+ * a row saved before its card existed stays orphaned forever otherwise, and it
+ * quietly under-reports that card's outstanding balance.
+ */
+export async function relinkOrphanTransactions(): Promise<number> {
+  const [accounts, all] = await Promise.all([
+    db.accounts.toArray(),
+    db.transactions.toArray(),
+  ]);
+  if (accounts.length === 0) return 0;
+
+  const byLast4 = new Map(accounts.filter((a) => a.last4).map((a) => [a.last4!, a.id]));
+  const fixed: Transaction[] = [];
+  for (const t of all) {
+    if (t.accountId || t.isDeleted) continue;
+    const text = `${t.rawContent ?? ""} ${t.merchantRaw}`;
+    // Only a last-4 that actually belongs to one of the user's accounts counts.
+    // Guessing from a bank name alone is how a Federal row lands on an HDFC card.
+    for (const [last4, id] of byLast4) {
+      if (new RegExp(`(?<![0-9])${last4}(?![0-9])`).test(text)) {
+        fixed.push({ ...t, accountId: id });
+        break;
+      }
+    }
+  }
+  if (fixed.length) {
+    await db.transactions.bulkPut(fixed);
+    await recalculateBalances();
+  }
+  return fixed.length;
 }
